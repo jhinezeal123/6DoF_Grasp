@@ -1,8 +1,16 @@
 """
 robot/robot.py - Lop Robot dai dien cho myArm M750 THAT.
 
-Khong con pymycobot, khong con bang offset rieng, khong con FK MuJoCo: moi thu
-di qua stack ROS 2 (myarm_robot_driver + myarm_kinematics + myarm_motion_execution).
+Lop nay KHONG dung pymycobot: moi lenh va moi feedback deu di qua stack ROS 2
+(myarm_robot_driver + myarm_kinematics + myarm_motion_execution).
+
+Nhung pymycobot VAN DUOC PHEP va dang duoc dung o cac tang khac - cau "khong con
+pymycobot" o ban truoc la sai:
+  - driver noi voi servo qua serial bang plugin_adapter/robot_arm
+    (myarm_m750_robot_arm.yaml cua lab);
+  - run_web.sh bat nguon servo bang pymycobot TRUOC khi launch driver, vi driver
+    khong khoi dong duoc khi servo mat dien;
+  - module moi duoc phep goi pymycobot truc tiep khi can.
 
   - Doc trang thai  : /myarm/state/joint_state, /myarm/state/tcp_pose
   - Gui dich khong  : /myarm/command/joint_goal, /myarm/command/tcp_pose
