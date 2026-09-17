@@ -38,7 +38,7 @@ class GraspPointPolicy(Policy):
         *,
         camera_name: str = "primary",
         z_floor_m: float = 0.02,
-        max_descend_m: float = 0.05,
+        max_descend_m: float = 0.28,
         max_target_drift_m: float = 0.30,
         log: Any = print,
     ) -> None:

@@ -82,11 +82,21 @@ def main() -> int:
     servo = ImageServo(
         jacobian_data["J"],
         max_step_xy_m=config["servo"]["max_step_xy_m"],
-        z_step_m=config["servo"]["z_step_m"],
+        max_step_z_m=config["servo"]["max_step_z_m"],
         align_px=config["servo"]["align_px"],
     )
-    print("  J            : det=%.3g  cond=%.1f  (do ngay %s)"
-          % (servo.det, servo.cond, jacobian_data.get("_do_ngay", "?")))
+    print("  J            : cond=%.1f  do nhay (px/mm) %s"
+          % (servo.cond,
+             "  ".join("%s=%.2f" % (a, b / 1000.0)
+                       for a, b in zip(jacobian_data.get("axes", "xyz"), servo.px_per_m))))
+    weakest = int(np.argmin(servo.px_per_m))
+    if servo.px_per_m[weakest] < 100.0:
+        # Cot J bang 0 nghia la truc do KHONG lam anh nhuc nhich - da gap: kep ti
+        # xuong mat ban nen khong ha duoc, cot z ra dung 0.0 va moi ket luan rut ra
+        # tu J do deu vo nghia. Canh bao som thay vi chay roi moi phat hien.
+        print("  CANH BAO: truc '%s' gan nhu khong anh huong anh (%.0f px/m)."
+              % ("xyz"[weakest], servo.px_per_m[weakest]))
+        print("            Kiem tra xem co gi dang chan chuyen dong khong.")
 
     robot = Robot()
     print("  cho feedback robot (toi da 25s)...")

@@ -278,8 +278,12 @@ def main() -> int:
         print("\nLOI: thieu diem do cho truc %s. Khong tinh duoc J." % (missing or "goc"))
         return 1
 
-    columns = [(np.array(points[name]) - np.array(points["0"])) / args.step
-               for name, _ in AXES]
+    # Chia cho DO DICH CO DAU, khong phai args.step. Truc z do bang offset -0.02
+    # (di xuong), nen chia cho +0.02 se lat nguoc dau cot z: J bao "ha xuong thi
+    # anh di len", va servo se lenh tay BAY LEN thay vi ha xuong. Da dinh dung
+    # loi nay mot lan - log in ra buoc z = +20.0 mm trong khi phai la -142 mm.
+    columns = [(np.array(points[name]) - np.array(points["0"])) / (direction[axis] * args.step)
+               for axis, (name, direction) in enumerate(AXES)]
     J = np.column_stack(columns)
 
     print("\n" + "=" * 66)
@@ -290,16 +294,32 @@ def main() -> int:
     # Do nhay tung truc: day moi la con so quyet dinh servo dung duoc hay khong.
     # Lan do dau chi co (x, y) va truc y yeu gap 5.3 lan truc x, khien servo doi
     # 346 mm cho mot sai so 104 px. Nhin bang nay la thay ngay.
-    print("\n  Do nhay tung truc:")
+    print("\n  Do nhay tung truc (px/mm) va dau:")
     for c, (name, _) in enumerate(AXES):
         px_per_mm = float(np.linalg.norm(J[:, c])) / 1000.0
-        print("    %s : %5.2f px/mm   (1 px sai <=> %.2f mm)" % (name, px_per_mm, 1.0 / max(px_per_mm, 1e-9)))
+        print("    %s : %5.2f px/mm   (1 px sai <=> %.2f mm)"
+              % (name, px_per_mm, 1.0 / max(px_per_mm, 1e-9)))
+
+    # Chot chan vat ly: ha xuong (dz < 0) PHAI lam ngon kep di XUONG trong anh
+    # (image-y tang), tuc J[1][2] < 0. Sai dau o day thi servo lenh tay bay len
+    # thay vi ha xuong - dung loi da dinh mot lan do chia sai dau phep do.
+    if J[1, 2] >= 0:
+        print("\n  LOI: cot z sai dau (J[1][2] = %.0f >= 0). Ha xuong phai lam anh di"
+              " xuong. Kiem tra lai phep do truoc khi dung J nay." % J[1, 2])
+        return 1
+    print("  dau cot z OK (ha xuong -> anh di xuong)")
 
     cond = float(np.linalg.cond(J))
     print("\n  cond(J) = %.1f   %s" % (cond, "OK" if cond < 20 else "CAO - J gan suy bien"))
 
     weakest = min(range(len(AXES)), key=lambda c: np.linalg.norm(J[:, c]))
-    print("  truc yeu nhat: %s (%.2f px/mm)" % (AXES[weakest][0], np.linalg.norm(J[:, weakest]) / 1000.0))
+    weak_px_per_mm = np.linalg.norm(J[:, weakest]) / 1000.0
+    print("  truc yeu nhat: %s (%.2f px/mm)" % (AXES[weakest][0], weak_px_per_mm))
+    if weak_px_per_mm < 0.2:
+        print("  CANH BAO: truc '%s' gan nhu khong lam anh nhuc nhich. Cot J bang 0"
+              % AXES[weakest][0])
+        print("            thuong nghia la co vat gi CHAN chuyen dong do, khong phai")
+        print("            J dep. Lan do dau, kep ti xuong mat ban lam cot z ra dung 0.0.")
 
     if args.dry_run:
         print("\n(DRY RUN - khong ghi file)")

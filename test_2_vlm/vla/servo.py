@@ -4,15 +4,17 @@ Toan hoc thuan, khong biet gi ve ROS hay robot. J do tu `scripts/calibrate_jacob
 
     e_px      = diem_dich - diem_ngon_kep          (pixel, 2 chieu)
     [dx,dy,dz] = pinv(J) @ e_px                    (met, he base_link)
-    dz        = 0 khi chua can hang ngang
 
-J la 2x3 (x, y, z) chu KHONG phai 2x2. Ly do do that: camera nhin cheo tu
-truoc-trai nen do nhay anh cua ba truc chenh nhau 5.3 lan (x 1.92 px/mm,
-z 1.47 px/mm, y 0.36 px/mm). Voi J 2x2 chi gom (x, y), mot sai so 104 px doi
-346 mm dich chuyen - khong bao gio hoi tu. Gia nghich dao trai deu hieu chinh
-sang ca ba truc va tu dong dung it truc y nhat.
+J la 2x3 (x, y, z) chu KHONG phai 2x2. Hai lan do cho hai ket qua khac han nhau,
+va lan dau sai vi ly do vat ly chu khong phai toan hoc:
 
-Khi J vuong (2x2, tu file cu), pinv suy bien ve nghich dao thuong nhu cu.
+  - Lan 1, kẹp tì xuống mặt bàn: cot z do duoc DUNG BANG 0 - tay khong the ha
+    xuong nen anh khong nhuc nhich. Moi ket luan rut ra tu J do deu vo nghia.
+  - Lan 2, nang tay len: cond = 2.5, ba truc deu dung duoc (x 0.64, y 2.05,
+    z 0.90 px/mm).
+
+Bai hoc: truoc khi tin vao J, phai kiem tra cot nao bang 0 hoac gan 0 - do la
+dau hieu co cai gi do dang CHAN chuyen dong, khong phai J "dep".
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ class ServoStep:
 
 class ImageServo:
     def __init__(self, jacobian, *, max_step_xy_m: float = 0.02,
-                 z_step_m: float = 0.005, align_px: float = 25.0,
+                 max_step_z_m: float = 0.02, align_px: float = 25.0,
                  min_singular: float = 1.0) -> None:
         self.J = np.atleast_2d(np.asarray(jacobian, dtype=np.float64))
         if self.J.shape[0] != 2:
@@ -47,8 +49,8 @@ class ImageServo:
         if self.J.shape[1] not in (2, 3):
             raise ServoError("J phai co 2 hoac 3 cot (x, y[, z]), nhan duoc %s"
                              % (self.J.shape,))
-        if max_step_xy_m <= 0 or z_step_m <= 0 or align_px <= 0:
-            raise ServoError("max_step_xy_m, z_step_m, align_px phai duong")
+        if max_step_xy_m <= 0 or max_step_z_m <= 0 or align_px <= 0:
+            raise ServoError("max_step_xy_m, max_step_z_m, align_px phai duong")
 
         # Gia nghich dao: dung duoc cho ca J 2x2 lan 2x3, va khong no ra khi J
         # gan suy bien theo mot huong nao do - no chi bo huong do di.
@@ -57,13 +59,13 @@ class ImageServo:
         self.singular = np.linalg.svd(self.J, compute_uv=False)
 
         # Nguong nay bat J bi dien sai hoac bang 0, khong phai de danh gia chat
-        # luong. J do duoc co gia tri suy bien ~1500-2000 nen nguong 1.0 rat thap.
+        # luong. J do duoc co gia tri suy bien ~900-2000 nen nguong 1.0 rat thap.
         if not np.all(np.isfinite(self.singular)) or self.singular[0] < float(min_singular):
             raise ServoError("J suy bien (singular value lon nhat = %g); khong servo duoc"
                              % self.singular[0])
 
         self.max_step_xy_m = float(max_step_xy_m)
-        self.z_step_m = float(z_step_m)
+        self.max_step_z_m = float(max_step_z_m)
         self.align_px = float(align_px)
         self.has_z = self.J.shape[1] == 3
 
@@ -84,9 +86,11 @@ class ImageServo:
             delta = np.array([delta[0], delta[1], 0.0])
         delta = delta.astype(np.float64, copy=True)
 
-        # Ha xuong CHI khi da can hang ngang: ha som la truot khoi vat.
-        if not aligned:
-            delta[2] = 0.0
+        # KHONG chan ha xuong theo "da can hang chua". Da thu va no tu khoa chinh
+        # minh: voi gripper cao hon vat ~220 mm, sai so doc trong anh (111 px)
+        # chinh LA do chieu cao, nen buoc ha xuong chiem 142/150 mm cua hieu chinh.
+        # Chi cho ha khi da can hang ngang thi khong bao gio ha duoc, vi can hang
+        # ngang khong bao gio xong. De Jacobian tu quyet dinh ty le ba truc.
 
         # Cat rieng phan ngang va phan dung. Cat chung theo chuan 3 chieu se khien
         # mot buoc ngang lon an het han muc va khong bao gio ha xuong duoc.
@@ -94,14 +98,14 @@ class ImageServo:
         saturated = horizontal > self.max_step_xy_m
         if saturated:
             delta[:2] *= self.max_step_xy_m / horizontal
-        delta[2] = float(np.clip(delta[2], -self.z_step_m, self.z_step_m))
+        delta[2] = float(np.clip(delta[2], -self.max_step_z_m, self.max_step_z_m))
 
         return ServoStep(
             delta_m=delta,
             error_px=magnitude,
             aligned=aligned,
             saturated=saturated,
-            descend=bool(aligned and delta[2] < 0.0),
+            descend=bool(delta[2] < 0.0),
         )
 
 
