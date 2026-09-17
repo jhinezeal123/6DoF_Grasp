@@ -9,8 +9,14 @@ CALIBRATION PHAI CHIA CHO DELTA DA RA LENH, khong phai delta do duoc. J o day mo
 ta anh huong cua LENH, nen sai so bam theo cua tay duoc bu tru thay vi thoi
 phong J len ~65%. (Da tung ket luan sai cho nay o test 1.)
 
-Cach do: tai tu the dau P, do g0. Ra lenh +2cm theo x, do g1 -> cot 1. Ve P,
-ra lenh +2cm theo y, do g2 -> cot 2. Ve P.
+Cach do: tai tu the dau P, hoi model ngon kep o dau -> g0. Ra lenh +2cm theo x,
+hoi lai -> g1, duoc cot 1. Ve P, ra lenh +2cm theo y, hoi lai -> g2, duoc cot 2.
+Ve P.
+
+Nhan dien ngon kep: HOI MODEL, khong do mau. Do that tren canh lam viec dem duoc
+11 vat do (ghe do, ao do, do tren ban, nguoi di lai) va khong vat nao trong so do
+la ngon kep - loc mau don thuan khong the phan biet. Model thi hieu "ngon kep cua
+canh tay robot" la gi. Moi lan hoi ~17 s cho anh moi; chap nhan duoc.
 
 An toan: buoc 2cm la nho; huong giu nguyen (lay tu tcp_quat thuc te, khong doan);
 luon ve tu the dau trong finally.
@@ -21,13 +27,16 @@ Chay:  python scripts/calibrate_jacobian.py [--step 0.02] [--dry-run]
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import re
 import sys
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
+import requests
 
 SDK_DIR = Path("/workspace/6DoF_Grasp/htc/SDK")
 sys.path.insert(0, str(SDK_DIR))
@@ -41,94 +50,58 @@ import program.ros_bridge as ros_bridge  # noqa: E402
 CAM_INDEX = 2
 CAM_W, CAM_H = 1280, 720
 
+SERVER = "http://127.0.0.1:8081"
+
+# Suffix CHINH XAC cua nhom tac gia (EmbodiedEvalKit, xem P1_KET_QUA.md §1).
+# Toa do tra ve chuan hoa 0-1000; pixel = x/1000*rong. Nhiet do 0 (greedy).
+POINT_SUFFIX = 'The answer should be presented in JSON format as follows: [{"point_2d": [x, y]}].'
+GRIPPER_Q = "Point to the red gripper fingers at the tip of the robot arm."
+
 OUT = Path(__file__).resolve().parents[1] / "configs" / "servo_jacobian.json"
 ART = Path(__file__).resolve().parents[1] / "artifacts"
 ART.mkdir(parents=True, exist_ok=True)
 
 
 # --------------------------------------------------------------------------- #
-# Thi giac: tim tam ngon kep do
+# Thi giac: hoi model ngon kep nam o dau
 # --------------------------------------------------------------------------- #
-def _red_mask(frame: np.ndarray) -> np.ndarray:
-    """Mat na do. Nguong do bang so do that, khong doan.
+def model_point(frame: np.ndarray, question: str, timeout_s: float = 120.0):
+    """Hoi model mot diem trong khung. Tra ((px, py), text_tho) hoac (None, text).
 
-    V>=90 (nguong dau tien) lam ROT mot ngon kep khi auto-exposure cua camera
-    tut xuong luc co nguoi di vao khung: do do hai ngon lech nhau ve do sang.
-    Do tai cho: ngon sang V~110, ngon toi V~80. Lay V>=70 cho ca hai lot.
+    Khong nem loi khi model tra loi sai dinh dang: ben goi can phan biet "model
+    khong thay ngon kep" voi "server chet", va ca hai deu phai dung duoc servo.
     """
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, np.array([0, 90, 70]), np.array([12, 255, 255]))
-    mask |= cv2.inRange(hsv, np.array([168, 90, 70]), np.array([180, 255, 255]))
-    return cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+    if not ok:
+        return None, "khong ma hoa duoc anh"
+    data_url = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
 
+    payload = {
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text", "text": question + "\n" + POINT_SUFFIX},
+            ],
+        }],
+        "temperature": 0.0,
+        "max_tokens": 64,
+    }
+    try:
+        response = requests.post(SERVER + "/v1/chat/completions", json=payload,
+                                 timeout=timeout_s)
+        response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"]
+    except Exception as exc:  # noqa: BLE001 - bao loi that ra ngoai
+        return None, "loi goi model: %s" % exc
 
-def _blobs(mask: np.ndarray, min_area: int = 120):
-    n, _, stats, cent = cv2.connectedComponentsWithStats(mask)
-    return sorted(
-        ((int(stats[i, 4]), cent[i]) for i in range(1, n) if stats[i, 4] >= min_area),
-        key=lambda b: -b[0],
-    )
-
-
-def red_moved_point(frame_a: np.ndarray, frame_b: np.ndarray,
-                    min_px: int = 60):
-    """Tam khoi DO da DI CHUYEN giua hai khung, o ca hai khung.
-
-    Tra (tam_o_A, tam_o_B, so_px) hoac None.
-
-    Vi sao khong di tim "hai blob do to nhat": do that tren canh that dem duoc
-    11 vat do (ghe do, ao do, vat tren ban, nguoi di lai) va khong vat nao trong
-    so do la ngon kep. Mau do don thuan khong du de phan biet.
-
-    Nhung vat tinh thi khong di chuyen. Giao mat na do voi vung anh da thay doi
-    giua hai tu the se giu lai dung phan ngon kep, va loai sach hau canh.
-    """
-    diff = cv2.absdiff(frame_a, frame_b).max(axis=2)
-    moved = ((diff > 25).astype(np.uint8)) * 255
-    # No ra mot chut: ngon kep dich vai chuc px thi vien truoc/sau moi cham nhau.
-    moved = cv2.dilate(moved, np.ones((9, 9), np.uint8))
-
-    out = []
-    for frame in (frame_a, frame_b):
-        sel = cv2.bitwise_and(_red_mask(frame), moved)
-        n = int(cv2.countNonZero(sel))
-        if n < min_px:
-            out.append(None)
-            continue
-        m = cv2.moments(sel, binaryImage=True)
-        out.append((m["m10"] / m["m00"], m["m01"] / m["m00"]))
-    if out[0] is None or out[1] is None:
-        return None
-    return out[0], out[1], int(cv2.countNonZero(cv2.bitwise_and(_red_mask(frame_b), moved)))
-
-
-def gripper_point(frame: np.ndarray) -> tuple[float, float] | None:
-    """Tam ngon kep do, hoac None neu khong tim thay cap nao hop ly.
-
-    Chi dung khi khong co anh tham chieu (khung goc). Chon theo CAP chu khong
-    lay 2 blob to nhat: nut dung khan cap cung mau do va co the to hon mot ngon kep.
-    """
-    blobs = _blobs(_red_mask(frame))
-    if len(blobs) < 2:
-        return None
-
-    best, best_score = None, None
-    for i in range(min(len(blobs), 6)):
-        for j in range(i + 1, min(len(blobs), 6)):
-            a0, c0 = blobs[i]
-            a1, c1 = blobs[j]
-            d = float(np.linalg.norm(c0 - c1))
-            ratio = max(a0, a1) / max(1, min(a0, a1))
-            if d > 300 or ratio > 2.5:
-                continue
-            # Uu tien: gan nhau, cung co, va to.
-            score = d / 300.0 + ratio - (a0 + a1) / 2000.0
-            if best_score is None or score < best_score:
-                best, best_score = (c0 + c1) / 2.0, score
-
-    if best is None:
-        return None
-    return float(best[0]), float(best[1])
+    match = re.search(r'"point_2d"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]', text)
+    if not match:
+        return None, text
+    h, w = frame.shape[:2]
+    px = float(match.group(1)) / 1000.0 * w
+    py = float(match.group(2)) / 1000.0 * h
+    return (px, py), text
 
 
 def capture_frame(cap: cv2.VideoCapture, tag: str) -> np.ndarray:
@@ -147,13 +120,13 @@ def capture_frame(cap: cv2.VideoCapture, tag: str) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- #
-# Do
-# --------------------------------------------------------------------------- #
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--step", type=float, default=0.02, help="do lon buoc do (met)")
-    ap.add_argument("--dry-run", action="store_true", help="khong ra lenh di chuyen")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="Do Jacobian command -> image.")
+    parser.add_argument("--step", type=float, default=0.02,
+                        help="do dich moi buoc, met (mac dinh 0.02 = 2cm)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="do thu, KHONG ra lenh chuyen dong")
+    args = parser.parse_args()
 
     robot = Robot()
     print("=== TRANG THAI DAU ===")
@@ -169,7 +142,7 @@ def main() -> int:
         return 1
     time.sleep(0.5)
 
-    print("  is_real_connected:", robot.is_real_connected)
+    bridge = get_bridge()
     p0 = np.array(robot.tcp_pos, dtype=float)
     q0 = np.array(robot.tcp_quat, dtype=float)
     print("  tcp_pos  :", np.round(p0, 4))
@@ -177,8 +150,6 @@ def main() -> int:
     if not np.all(np.isfinite(p0)) or not np.all(np.isfinite(q0)):
         print("LOI: tcp_pos/tcp_quat khong hop le (NaN). Khong the hieu chuan.")
         return 1
-
-    bridge = get_bridge()
 
     # BAT BUOC: executor TU CHOI moi lenh khi cong an toan cua driver dang disarmed,
     # nhung send_tcp_pose VAN tra True. Khong rearm thi tay dung im, anh khong
@@ -230,10 +201,9 @@ def main() -> int:
         return 1
 
     def goto(offset_xy, tag: str):
-        """Ra lenh toi p0 + offset, cho dung han, chup anh. Tra (khung, tcp_do_duoc).
+        """Ra lenh toi p0 + offset, cho dung han, hoi model ngon kep o dau.
 
-        Tra ve ca tcp do duoc: neu tay khong nhuc nhich thi moi con so Jacobian
-        tinh ra deu la nhieu, khong phai do nhay.
+        Tra ve (diem_anh, tcp_do_duoc, text_model).
         """
         target = p0 + np.array([offset_xy[0], offset_xy[1], 0.0])
         if not args.dry_run:
@@ -242,23 +212,30 @@ def main() -> int:
                 raise RuntimeError("set_tcp_pose tra False (lenh bi tu choi)")
             if not wait_settled():
                 raise RuntimeError("tay khong dung yen sau 20s (tag=%s)" % tag)
-        frame = capture_frame(tag)
-        return frame, np.array(robot.tcp_pos, dtype=float)
+        frame = capture_frame(cap, tag)
+        tcp = np.array(robot.tcp_pos, dtype=float)
+        print("  [%s] hoi model (co the mat ~17s)..." % tag)
+        t_start = time.time()
+        point, text = model_point(frame, GRIPPER_Q)
+        print("  [%s] model tra loi sau %.1fs: %s" % (tag, time.time() - t_start, text.strip()))
+        return point, tcp, text
 
-    f0 = f1 = f2 = None
+    g0 = g1 = g2 = None
     t0 = t1 = t2 = tb = None
     try:
-        print("\n=== DO DIEM GOC ===")
-        f0, t0 = goto(np.zeros(2), "g0")
-        p_g0 = gripper_point(f0)
-        print("  tcp do duoc = %s" % np.round(t0, 4))
-        print("  (chi de tham khao) ngon kep theo mau do: %s"
-              % ("(%.1f, %.1f)" % p_g0 if p_g0 else "khong xac dinh - canh co nhieu vat do"))
+        print("\n=== DIEM GOC ===")
+        g0, t0, _ = goto(np.zeros(2), "g0")
+        if g0 is None:
+            raise RuntimeError("model khong chi duoc ngon kep o tu the goc")
+        print("  g0 = (%.1f, %.1f) px   tcp = %s" % (g0[0], g0[1], np.round(t0, 4)))
 
         print("\n=== BUOC 1: +%.0f mm theo x ===" % (args.step * 1000))
-        f1, t1 = goto(np.array([args.step, 0.0]), "g1")
-        print("  tcp do duoc = %s   dich TCP = %s m"
-              % (np.round(t1, 4), np.round(t1 - t0, 4)))
+        g1, t1, _ = goto(np.array([args.step, 0.0]), "g1")
+        if g1 is None:
+            raise RuntimeError("model khong chi duoc ngon kep sau buoc x")
+        print("  g1 = (%.1f, %.1f) px   dich anh = (%.2f, %.2f) px"
+              % (g1[0], g1[1], g1[0] - g0[0], g1[1] - g0[1]))
+        print("  tcp = %s   dich TCP = %s m" % (np.round(t1, 4), np.round(t1 - t0, 4)))
 
         # Chot chan: TCP khong doi thi moi con so J deu la nhieu. Lan chay dau da
         # cho ra J "dep" (cond=2.1) tu mot con tay dung im - phai chan tu day.
@@ -269,14 +246,16 @@ def main() -> int:
                 % (args.step * 1000, np.linalg.norm(t1 - t0) * 1000))
 
         print("\n=== VE TU THE DAU ===")
-        _, tb = goto(np.zeros(2), "gb")
-        print("  tcp do duoc = %s   lech TCP = %s m"
-              % (np.round(tb, 4), np.round(tb - t0, 4)))
+        _, tb, _ = goto(np.zeros(2), "gb")
+        print("  tcp = %s   lech TCP = %s m" % (np.round(tb, 4), np.round(tb - t0, 4)))
 
         print("\n=== BUOC 2: +%.0f mm theo y ===" % (args.step * 1000))
-        f2, t2 = goto(np.array([0.0, args.step]), "g2")
-        print("  tcp do duoc = %s   dich TCP = %s m"
-              % (np.round(t2, 4), np.round(t2 - t0, 4)))
+        g2, t2, _ = goto(np.array([0.0, args.step]), "g2")
+        if g2 is None:
+            raise RuntimeError("model khong chi duoc ngon kep sau buoc y")
+        print("  g2 = (%.1f, %.1f) px   dich anh = (%.2f, %.2f) px"
+              % (g2[0], g2[1], g2[0] - g0[0], g2[1] - g0[1]))
+        print("  tcp = %s   dich TCP = %s m" % (np.round(t2, 4), np.round(t2 - t0, 4)))
 
     finally:
         print("\n=== VE TU THE DAU (finally) ===")
@@ -288,27 +267,12 @@ def main() -> int:
                   % (np.round(back, 4), np.linalg.norm(back - p0) * 1000))
         cap.release()
 
-    if f0 is None or f1 is None or f2 is None:
-        print("\nLOI: khong chup du 3 khung (g0/g1/g2). Khong tinh duoc J.")
+    if g0 is None or g1 is None or g2 is None:
+        print("\nLOI: thieu diem (g0/g1/g2). Khong tinh duoc J.")
         return 1
 
-    # Do dich chuyen cua khoi DO DA DI CHUYEN, khong phai cua "blob do to nhat".
-    r1 = red_moved_point(f0, f1)
-    r2 = red_moved_point(f0, f2)
-    if r1 is None or r2 is None:
-        print("\nLOI: khong thay khoi do nao di chuyen giua cac tu the.")
-        print("  nghia la mat na do giao vung anh-thay-doi khong con gi.")
-        print("  kiem tra: ngon kep co bi khuat khong, anh co bi loa khong.")
-        return 1
-
-    d1 = np.array(r1[1]) - np.array(r1[0])
-    d2 = np.array(r2[1]) - np.array(r2[0])
-    print("\n=== DICH CHUYEN ANH CUA NGON KEP ===")
-    print("  +%.0f mm theo x -> (%7.2f, %7.2f) px   [%d px do chung minh]"
-          % (args.step * 1000, d1[0], d1[1], r1[2]))
-    print("  +%.0f mm theo y -> (%7.2f, %7.2f) px   [%d px do chung minh]"
-          % (args.step * 1000, d2[0], d2[1], r2[2]))
-
+    d1 = np.array(g1) - np.array(g0)
+    d2 = np.array(g2) - np.array(g0)
     J = np.column_stack([d1 / args.step, d2 / args.step])
 
     print("\n" + "=" * 62)
@@ -336,13 +300,15 @@ def main() -> int:
         "step_m": args.step,
         "p0": p0.tolist(),
         "q0": q0.tolist(),
-        "d_px_x": d1.tolist(),
-        "d_px_y": d2.tolist(),
+        "g0": list(g0),
+        "g1": list(g1),
+        "g2": list(g2),
         "tcp_moved_x_m": (t1 - t0).tolist(),
         "tcp_moved_y_m": (t2 - t0).tolist(),
         "det": det,
         "cond": cond,
         "offsets_deg": list(np.round(ros_bridge.OFFSETS_DEG, 4)),
+        "detector": {"kind": "model_point_2d", "server": SERVER, "question": GRIPPER_Q},
         "camera": {"index": CAM_INDEX, "width": CAM_W, "height": CAM_H},
     }, indent=2))
     print("\nDa ghi:", OUT)
