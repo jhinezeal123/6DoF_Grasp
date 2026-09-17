@@ -26,6 +26,7 @@ from program.camera.camera import Camera
 from program.camera.usb_camera import USB_CAMERAS, USBCamera
 from script.compressor import ImageCompressor
 from user.fake_robot.fake_robot import FakeRobot
+from user.teleop import render_html as render_teleop_page
 
 # Duong dan stream -> khoa trong cache JPEG (xem get_stream_jpeg).
 # Anh xa TUONG MINH thay vi suy ra tu danh tinh doi tuong camera: ban cu lam vay
@@ -107,6 +108,17 @@ class WebControlHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
             # Cap ma phien neu chua co -> moi tab co mode rieng, khong dung chung.
+            self._flush_sid_cookie()
+            self.end_headers()
+            self.wfile.write(html)
+
+        elif p in ("/teleop", "/teleop.html"):
+            sid = self._sid_or_new()
+            ctx.touch_session(sid)
+            html = ctx.render_teleop_html()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html)))
             self._flush_sid_cookie()
             self.end_headers()
             self.wfile.write(html)
@@ -231,6 +243,11 @@ class WebControlHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp)
 
+        elif p == "/api/teleop/status":
+            sid = self._sid_or_new()
+            ctx.touch_session(sid)
+            self._send_json(ctx.teleop_status(sid))
+
         elif p in STREAM_KEYS:
             key = STREAM_KEYS[p]
             if not ctx.stream_available(key):
@@ -289,6 +306,16 @@ class WebControlHandler(BaseHTTPRequestHandler):
         elif p == "/api/set_ee_absolute":
             # Giong slider khop: control -> robot that, simulate -> ghost IK.
             result = ctx.set_ee_absolute(body, sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
+
+        elif p == "/api/teleop/step":
+            result = ctx.teleop_step(body, sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
+
+        elif p == "/api/teleop/reset":
+            result = ctx.reset_teleop(sid)
             self._send_json({"status": "ok" if result.get("ok") else "error",
                              **result})
 
@@ -434,6 +461,14 @@ class WebControlApp:
     MODE_SIMULATE = "simulate"    # Dieu khien thu nghiem tren robot ao
     MODE_OFFSET = "offset"        # Hieu chuan offset: slider CHI can robot ao
 
+    # Teleop intentionally keeps orientation fixed while the keyboard only
+    # changes XYZ.  With the SDK tool0 transform this makes the gripper point
+    # vertically down in base_link.
+    TELEOP_DEFAULT_QUAT = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    TELEOP_MIN_POSITION = np.array([-0.10, -0.60, 0.00], dtype=np.float64)
+    TELEOP_MAX_POSITION = np.array([0.70, 0.60, 0.70], dtype=np.float64)
+    TELEOP_MAX_DELTA_M = 0.05
+
     def __init__(self, real_robot: Robot, fake_robot: FakeRobot,
                  cam_sim: Optional[Camera] = None,
                  cam_real: Optional[Camera] = None,
@@ -472,6 +507,9 @@ class WebControlApp:
         # cung nhay theo, rat nguy hiem vi B tuong dang xem robot that.
         self._sessions = {}           # sid -> {"mode": str, "last": float, "name": str}
         self._control_tabs = {}       # sid -> "joint" | "coordinate"
+        # Per-session absolute TCP target used by keyboard teleop.  Deltas are
+        # accumulated here because TCP feedback arrives slower than key repeats.
+        self._teleop_targets = {}     # sid -> {"position": [x, y, z]}
 
         # Luu tru pose truoc khi vao mode simulate
         self._saved_real_pose = None
@@ -571,6 +609,7 @@ class WebControlApp:
                     if k != sid:
                         self._sessions.pop(k, None)
                         self._control_tabs.pop(k, None)
+                        self._teleop_targets.pop(k, None)
 
     def get_stream_jpeg(self, key: str) -> Optional[bytes]:
         """Lay JPEG moi nhat tu cache (thread-safe). None neu chua render xong."""
@@ -586,6 +625,92 @@ class WebControlApp:
             return True
         return {"sim": self.cam_sim, "third": self.cam_third,
                 "real": self.cam_real}.get(key) is not None
+
+    def render_teleop_html(self) -> bytes:
+        """Render the standalone keyboard teleoperation page."""
+        return render_teleop_page(USB_CAMERAS)
+
+    @staticmethod
+    def _finite_position(value):
+        try:
+            position = np.asarray(value, dtype=np.float64).reshape(3)
+        except (TypeError, ValueError):
+            return None
+        return position if np.all(np.isfinite(position)) else None
+
+    def teleop_status(self, sid: str = ""):
+        """Return teleop target, measured TCP pose and safety state."""
+        with self._lock:
+            actual = self._finite_position(self.real_robot.tcp_pos)
+            entry = self._teleop_targets.get(sid)
+            if entry is not None:
+                target = self._finite_position(entry.get("position"))
+            else:
+                target = actual.copy() if actual is not None else None
+            return {
+                "ok": target is not None,
+                "position": None if target is None else target.tolist(),
+                "quaternion": self.TELEOP_DEFAULT_QUAT.tolist(),
+                "actual_position": None if actual is None else actual.tolist(),
+                "safety_state": self.real_robot.safety_state,
+                "is_armed": bool(self.real_robot.is_armed),
+                "is_real_connected": bool(self.real_robot.is_real_connected),
+            }
+
+    def reset_teleop(self, sid: str = ""):
+        """Forget the accumulated target; the next step starts at feedback TCP."""
+        with self._lock:
+            self._teleop_targets.pop(sid, None)
+            status = self.teleop_status(sid)
+            status["message"] = "Da reset target teleop theo pose robot"
+            return status
+
+    def teleop_step(self, body, sid: str = ""):
+        """Apply one keyboard Cartesian delta with fixed downward orientation."""
+        if not isinstance(body, dict):
+            return {"ok": False, "message": "body teleop phai la JSON object"}
+        try:
+            delta = np.asarray([body.get("dx"), body.get("dy"), body.get("dz")],
+                               dtype=np.float64)
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "dx/dy/dz phai la so"}
+        if delta.shape != (3,) or not np.all(np.isfinite(delta)):
+            return {"ok": False, "message": "dx/dy/dz phai huu han"}
+        if np.any(np.abs(delta) > self.TELEOP_MAX_DELTA_M):
+            return {"ok": False,
+                    "message": "Moi buoc teleop khong duoc vuot qua 50 mm"}
+        if not np.any(np.abs(delta) > 1e-12):
+            return {"ok": False, "message": "Buoc teleop phai khac 0"}
+
+        with self._lock:
+            entry = self._teleop_targets.get(sid)
+            if entry is None:
+                base = self._finite_position(self.real_robot.tcp_pos)
+                if base is None:
+                    return {"ok": False,
+                            "message": "Chua co TCP feedback moi de bat dau teleop"}
+            else:
+                base = self._finite_position(entry.get("position"))
+                if base is None:
+                    self._teleop_targets.pop(sid, None)
+                    return {"ok": False,
+                            "message": "Target teleop khong hop le; hay reset lai"}
+
+            target = base + delta
+            if np.any(target < self.TELEOP_MIN_POSITION) or np.any(target > self.TELEOP_MAX_POSITION):
+                return {
+                    "ok": False,
+                    "message": "Target vuot mien an toan XYZ cua teleop",
+                    "position": base.tolist(),
+                }
+
+            result = self._move_ee_pose_locked(target, self.TELEOP_DEFAULT_QUAT.copy())
+            if result.get("ok"):
+                self._teleop_targets[sid] = {"position": target.tolist()}
+                result["delta"] = delta.tolist()
+                result["position"] = target.tolist()
+                result["quaternion"] = self.TELEOP_DEFAULT_QUAT.tolist()
+            return result
 
     def _start_render_thread(self):
         """
@@ -762,12 +887,12 @@ class WebControlApp:
 
     def move_ee(self, body, sid: str = ""):
         """Publish a validated absolute TCP pose to the real robot."""
-        del sid
         try:
             position, quaternion = self._parse_ee_pose(body)
         except ValueError as exc:
             return {"ok": False, "message": str(exc)}
         with self._lock:
+            self._teleop_targets.pop(sid, None)
             return self._move_ee_pose_locked(position, quaternion)
 
     def stop(self) -> bool:
@@ -848,6 +973,7 @@ class WebControlApp:
         with self._lock:
             mode_clean = mode.lower().strip()
             self._ee_preview = None
+            self._teleop_targets.pop(sid, None)
             if mode_clean == self.MODE_SIMULATE:
                 self.set_session_mode(sid, self.MODE_SIMULATE)
                 with self._mj_lock:
@@ -879,6 +1005,7 @@ class WebControlApp:
         """
         with self._lock:
             self._ee_preview = None
+            self._teleop_targets.pop(sid, None)
             target = self.active_control_object(sid)
             if isinstance(param, str) and param.lower() in ("gripper", "grip"):
                 # % -> met, dung MAX_GRIPPER_M cua Robot (mot nguon su that).
@@ -892,6 +1019,7 @@ class WebControlApp:
         """Tinh toan delta va goi ham change() de dat gia tri tuyet doi."""
         with self._lock:
             self._ee_preview = None
+            self._teleop_targets.pop(sid, None)
             # Hai che do nay slider chi duoc ghi vao HINH VE MuJoCo:
             #   OFFSET   - can robot ao cho khop thuc te roi ghi lai offset
             #   SIMULATE - dung pose ao, roi bam "dua robot that ve pose nay"
@@ -1031,6 +1159,8 @@ class WebControlApp:
         if name not in presets:
             return False
         q_rad, grip = presets[name]
+        with self._lock:
+            self._teleop_targets.pop(sid, None)
         target = self.active_control_object(sid)
         # Gui CA 6 khop trong MOT lenh (set_pose), cho ca robot that lan fake.
         # Voi 6 lan set_joint noi tiep, moi lan dong bo lai tu encoder nen khop sau
@@ -1045,6 +1175,7 @@ class WebControlApp:
         """Reset scene mo phong MuJoCo ve trang thai mac dinh."""
         with self._lock:
             self._ee_preview = None
+            self._teleop_targets.clear()
             if hasattr(self.fake_robot, "reset_scene"):
                 with self._mj_lock:
                     return self.fake_robot.reset_scene()
@@ -1374,6 +1505,8 @@ class WebControlApp:
       <h1>myArm M750 - Hệ Thống Điều Khiển Robot VLA</h1>
       <p>Cấu trúc framework tích hợp Real Robot, Ghost Simulator & Camera</p>
     </div>
+    <a href="/teleop" style="color:#c9d1d9; border:1px solid #30363d; border-radius:6px;
+       padding:8px 12px; text-decoration:none; font-size:0.8rem; white-space:nowrap;">TELEOP</a>
     <div class="mode-bar">
       <span id="badgeStatus" class="badge badge-real">MODE: CONTROL</span>
       <button id="btnControl" class="btn btn-mode active-control" onclick="setMode('control')">CONTROL (Robot Thật)</button>
