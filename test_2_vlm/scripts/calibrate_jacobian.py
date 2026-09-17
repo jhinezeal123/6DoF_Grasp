@@ -371,11 +371,15 @@ def main() -> int:
         print("\nLOI: thieu diem do cho truc %s. Khong tinh duoc J." % (missing or "goc"))
         return 1
 
-    # Khop binh phuong nho nhat qua goc cho tung truc: slope = sum(x*y)/sum(x*x)
-    # voi x = k*step (co dau), y = diem_anh(k) - diem_anh(0).
+    # Khop binh phuong nho nhat qua goc cho tung truc: slope = sum(x*y)/sum(x*x).
+    #
+    # x PHAI la do dich CO DAU (direction * k * step), khong phai k * step. Truc z
+    # di bang offset -0.06 nen dung k*step (+0.06) se lat nguoc dau cot z, va servo
+    # se lenh tay BAY LEN thay vi ha xuong. Loi nay da dinh HAI lan - chot chan
+    # "dau cot z" ben duoi bat duoc ca hai, nen no duoc giu lai chu khong bo.
     columns, slopes = [], {}
-    for name, direction in AXES:
-        xs = np.array([k * args.step for k in range(1, REPEATS + 1)])
+    for axis, (name, direction) in enumerate(AXES):
+        xs = np.array([direction[axis] * k * args.step for k in range(1, REPEATS + 1)])
         ys = np.array([np.array(points["%s_%d" % (name, k)]) - np.array(points["0"])
                        for k in range(1, REPEATS + 1)])
         slope = (xs[:, None] * ys).sum(axis=0) / (xs ** 2).sum()
