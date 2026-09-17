@@ -36,7 +36,12 @@ def main() -> int:
     config = json.loads(Path(args.config).read_text())
     instruction = args.instruction or config["instruction"]
 
-    camera = PrimaryCamera(**config.get("camera", {"index": 2}))
+    cam_cfg = config.get("camera", {})
+    camera = PrimaryCamera(
+        index=cam_cfg.get("index", 2),
+        width=cam_cfg.get("width", 1280),
+        height=cam_cfg.get("height", 720),
+    )
     camera.open()
     try:
         frame = camera.photo()
