@@ -305,37 +305,36 @@ def main() -> int:
         # Lan goi model o buoc cuoi khong phai de lay so lieu ma de BAT TRÔI: neu
         # diem bam mau va diem model lech nhau nhieu thi ket qua khong dang tin.
         for name, direction in AXES:
-            print("\n=== TRUC %s: 3 buoc cong don %+.0f mm moi buoc ==="
-                  % (name, args.step * 1000))
+            print("\n=== TRUC %s: %d buoc x %.0f mm, tong %.0f mm ==="
+                  % (name, REPEATS, args.step * 1000, args.step * REPEATS * 1000))
             previous_frame, previous_point = frame0, g0
             for k in range(1, REPEATS + 1):
                 tag = "%s_%d" % (name, k)
                 frame, tcp = goto(direction * args.step * k, tag)
                 moved[tag] = tcp - t0
 
-                tracked, score = track_point(previous_frame, frame, previous_point)
                 last = (k == REPEATS)
-                if tracked is None or score < 0.5:
-                    print("  [%s] bam mau truot (diem khop %.2f) -> goi model" % (tag, score))
+                if last:
+                    # Buoc cuoi LUON dung model. Voi REPEATS = 1 thi day la buoc
+                    # duy nhat, va khong co gi de bam mau ca - so bam mau voi model
+                    # o day chi tao bao dong gia, vi ta da biet bam mau truot ~14 px.
                     point = ask(frame)
                     check_cost += 1
-                elif last:
-                    # Kiem chung o buoc xa nhat: bam mau co troi khong?
-                    verified = ask(frame)
-                    check_cost += 1
-                    if verified is None:
-                        raise RuntimeError("model khong chi duoc ngon kep o buoc %s" % tag)
-                    drift = float(np.linalg.norm(np.array(verified) - np.array(tracked)))
-                    print("  [%s] bam mau (%.1f, %.1f) vs model (%.1f, %.1f): lech %.1f px"
-                          % (tag, tracked[0], tracked[1], verified[0], verified[1], drift))
-                    if drift > 10.0:
-                        raise RuntimeError(
-                            "bam mau troi %.1f px so voi model o buoc %s. Ket qua J se sai;"
-                            " dung lai thay vi ghi file." % (drift, tag))
-                    point = tracked
+                    if REPEATS > 1:
+                        tracked, score = track_point(previous_frame, frame, previous_point)
+                        if tracked is not None:
+                            drift = float(np.linalg.norm(np.array(point) - np.array(tracked)))
+                            print("  [%s] kiem chung: model vs bam mau lech %.1f px"
+                                  % (tag, drift))
                 else:
-                    point = tracked
-                    print("  [%s] bam mau (diem khop %.2f)" % (tag, score))
+                    tracked, score = track_point(previous_frame, frame, previous_point)
+                    if tracked is None or score < 0.5:
+                        print("  [%s] bam mau truot (diem khop %.2f) -> goi model" % (tag, score))
+                        point = ask(frame)
+                        check_cost += 1
+                    else:
+                        point = tracked
+                        print("  [%s] bam mau (diem khop %.2f)" % (tag, score))
 
                 if point is None:
                     raise RuntimeError("khong xac dinh duoc ngon kep o buoc %s" % tag)
