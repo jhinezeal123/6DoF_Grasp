@@ -129,6 +129,11 @@ class FakeRobot(Robot):
         r_tool = r_flange @ self._TOOL0_ROT
         return p_tool.copy(), r_tool.copy()
 
+    def tcp_pose(self):
+        """Return the ghost tool0 pose as (position, ROS quaternion)."""
+        position, rotation = self._tool0_pose()
+        return position, self._mat_to_quat_xyzw(rotation)
+
     @staticmethod
     def _orientation_error(r_current, r_target) -> np.ndarray:
         # First-order SO(3) error used by the damped least-squares IK update.
