@@ -161,6 +161,12 @@ class WebControlHandler(BaseHTTPRequestHandler):
                 "running": bool(ctx._traj_thread is not None and ctx._traj_thread.is_alive()),
                 "error": ctx._traj_error,
             }
+            # Pose TCP dang preview tren robot ao (neu co). Doc truoc _mj_lock de
+            # giu thu tu khoa duy nhat: _lock -> _mj_lock.
+            with ctx._lock:
+                serialized["ee_preview"] = (
+                    dict(ctx._ee_preview) if ctx._ee_preview is not None else None
+                )
             real_q = ctx.real_robot.qpos_cached
             serialized["real_qpos"] = real_q.tolist()
             serialized["real_deg"] = np.degrees(real_q).tolist()
@@ -240,6 +246,18 @@ class WebControlHandler(BaseHTTPRequestHandler):
             target_val = float(body.get("value", 0.0))  # rad hoac grip
             success = ctx.handle_set_absolute(param, target_val, sid)
             self._send_json({"status": "ok" if success else "error"})
+
+        elif p == "/api/ee_preview":
+            # IK display-only tren MuJoCo; tuyet doi khong publish lenh robot that.
+            result = ctx.preview_ee_pose(body, sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
+
+        elif p == "/api/move_ee":
+            # Lenh that: goi Robot.set_tcp_pose() voi pose da validate.
+            result = ctx.move_ee(body, sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
 
         elif p == "/api/set_mode":
             # Chuyen doi mode: 'control', 'simulate' hoac 'offset' (chi doi cho tab nay)
@@ -422,6 +440,11 @@ class WebControlApp:
         self._traj_thread = None
         self._traj_error = None
 
+        # Pose EE dang xem truoc tren ghost MuJoCo. Chi co mot FakeRobot dung
+        # chung, nen luu mot target hien tai va khoa mirror_real() cho toi khi
+        # user submit hoac thuc hien lenh dieu khien khac.
+        self._ee_preview = None
+
         # Cache JPEG dung chung cho MOI tab (xem _serve_mjpeg). 1 thread render
         # duy nhat, thay vi moi ket noi tu render -> N tab khong con N lan render.
         self.stream_fps = 25.0
@@ -585,8 +608,88 @@ class WebControlApp:
         tab nao cung khoa mirror cho TAT CA - cung mot su nhuong bo nhu ban cu.
         """
         with self._lock:
-            return any(s.get("mode") in (self.MODE_OFFSET, self.MODE_SIMULATE)
-                       for s in self._sessions.values())
+            return (self._ee_preview is not None or
+                    any(s.get("mode") in (self.MODE_OFFSET, self.MODE_SIMULATE)
+                        for s in self._sessions.values()))
+
+    @staticmethod
+    def _parse_ee_pose(body):
+        """Validate a web pose and normalize its ROS quaternion."""
+        if not isinstance(body, dict):
+            raise ValueError("body phai la JSON object")
+        position = body.get("position")
+        quaternion = body.get("quaternion")
+        # Accept flat fields as well, which makes the endpoint convenient for
+        # curl/scripts in addition to the web form.
+        if position is None:
+            position = [body.get(k) for k in ("x", "y", "z")]
+        if quaternion is None:
+            quaternion = [body.get(k) for k in ("qx", "qy", "qz", "qw")]
+        try:
+            p = np.asarray(position, dtype=np.float64).reshape(3)
+            q = np.asarray(quaternion, dtype=np.float64).reshape(4)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("position can 3 so va quaternion can 4 so") from exc
+        if not np.all(np.isfinite(p)) or not np.all(np.isfinite(q)):
+            raise ValueError("position/quaternion phai gom so huu han")
+        q_norm = float(np.linalg.norm(q))
+        if q_norm < 1e-9:
+            raise ValueError("quaternion khong duoc la vector 0")
+        q = q / q_norm
+        return p, q
+
+    def preview_ee_pose(self, body, sid: str = ""):
+        """Solve display-only MuJoCo IK for the requested tool0 pose."""
+        del sid  # The ghost model is shared by all browser tabs.
+        try:
+            position, quaternion = self._parse_ee_pose(body)
+        except ValueError as exc:
+            return {"ok": False, "message": str(exc)}
+        with self._lock:
+            try:
+                with self._mj_lock:
+                    result = self.fake_robot.preview_tcp_pose(position, quaternion)
+            except Exception as exc:
+                return {"ok": False, "message": str(exc)}
+            if result.get("ok"):
+                self._ee_preview = {
+                    "position": position.tolist(),
+                    "quaternion": quaternion.tolist(),
+                    "actual_position": result.get("actual_position"),
+                    "position_error_m": result.get("position_error_m"),
+                    "orientation_error_rad": result.get("orientation_error_rad"),
+                    "iterations": result.get("iterations"),
+                }
+            return {
+                **result,
+                "position": position.tolist(),
+                "quaternion": quaternion.tolist(),
+            }
+
+    def move_ee(self, body, sid: str = ""):
+        """Publish a validated absolute TCP pose to the real robot."""
+        del sid
+        try:
+            position, quaternion = self._parse_ee_pose(body)
+        except ValueError as exc:
+            return {"ok": False, "message": str(exc)}
+        with self._lock:
+            if self._traj_thread is not None and self._traj_thread.is_alive():
+                return {"ok": False, "message": "Robot dang chay quy dao khac"}
+            try:
+                ok = bool(self.real_robot.set_tcp_pose(position, quaternion))
+            except Exception as exc:
+                return {"ok": False, "message": f"set_tcp_pose loi: {exc}"}
+            if ok:
+                # Return the display to the measured robot after submit. The
+                # third-person stream will then follow the real feedback again.
+                self._ee_preview = None
+            return {
+                "ok": ok,
+                "position": position.tolist(),
+                "quaternion": quaternion.tolist(),
+                "message": "Da gui set_tcp_pose" if ok else "Robot tu choi set_tcp_pose",
+            }
 
     def stop(self) -> bool:
         """Dung khan cap robot that (dung ngay, khong chay not quy dao)."""
@@ -665,6 +768,7 @@ class WebControlApp:
         """
         with self._lock:
             mode_clean = mode.lower().strip()
+            self._ee_preview = None
             if mode_clean == self.MODE_SIMULATE:
                 self.set_session_mode(sid, self.MODE_SIMULATE)
                 with self._mj_lock:
@@ -695,6 +799,7 @@ class WebControlApp:
         nen phai doi sang met truoc khi goi Robot.change() - ham do nhan MET.
         """
         with self._lock:
+            self._ee_preview = None
             target = self.active_control_object(sid)
             if isinstance(param, str) and param.lower() in ("gripper", "grip"):
                 # % -> met, dung MAX_GRIPPER_M cua Robot (mot nguon su that).
@@ -707,6 +812,7 @@ class WebControlApp:
     def handle_set_absolute(self, param, target_val: float, sid: str = "") -> bool:
         """Tinh toan delta va goi ham change() de dat gia tri tuyet doi."""
         with self._lock:
+            self._ee_preview = None
             # Hai che do nay slider chi duoc ghi vao HINH VE MuJoCo:
             #   OFFSET   - can robot ao cho khop thuc te roi ghi lai offset
             #   SIMULATE - dung pose ao, roi bam "dua robot that ve pose nay"
@@ -770,6 +876,7 @@ class WebControlApp:
         with self._lock:
             if self.get_session_mode(sid) != self.MODE_SIMULATE:
                 return False
+            self._ee_preview = None
             # Chan bam trung: FollowTrajectory chay o thread rieng va mat vai giay.
             # Bam 3 lan nhanh -> 3 thread cung dieu khien 1 tay -> lenh tron lan
             # (da do duoc: 3 thread cung chay). Doi xong moi cho bam tiep.
@@ -832,12 +939,15 @@ class WebControlApp:
         # Voi 6 lan set_joint noi tiep, moi lan dong bo lai tu encoder nen khop sau
         # THU khop truoc ve gia tri encoder -> preset chi con dung khop cuoi cung
         # (da do). FakeRobot ke thua set_pose tu Robot, cung di qua joint_goal.
-        with self._mj_lock:
-            return target.set_pose(q_rad, grip)
+        with self._lock:
+            self._ee_preview = None
+            with self._mj_lock:
+                return target.set_pose(q_rad, grip)
 
     def reset_scene(self) -> bool:
         """Reset scene mo phong MuJoCo ve trang thai mac dinh."""
         with self._lock:
+            self._ee_preview = None
             if hasattr(self.fake_robot, "reset_scene"):
                 with self._mj_lock:
                     return self.fake_robot.reset_scene()
@@ -1076,6 +1186,84 @@ class WebControlApp:
       background: #30363d;
       color: #58a6ff;
     }}
+    .ee-card {{
+      grid-column: 1 / -1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 14px;
+    }}
+    .ee-card h3 {{
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+      color: #f0f6fc;
+    }}
+    .ee-help {{
+      color: #8b949e;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }}
+    .ee-grid {{
+      display: grid;
+      grid-template-columns: repeat(7, minmax(90px, 1fr));
+      gap: 8px;
+    }}
+    .ee-field {{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: #8b949e;
+      font-size: 0.72rem;
+    }}
+    .ee-field input {{
+      width: 100%;
+      padding: 7px 8px;
+      color: #c9d1d9;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      font-family: monospace;
+    }}
+    .ee-actions {{
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }}
+    .ee-actions button {{
+      flex: 1;
+      padding: 8px 12px;
+      color: #c9d1d9;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      font-weight: 600;
+      cursor: pointer;
+    }}
+    .ee-actions button:hover {{
+      background: #30363d;
+      border-color: #58a6ff;
+    }}
+    .ee-actions .ee-submit {{
+      color: #fff;
+      background: #238636;
+      border-color: #2ea043;
+    }}
+    .ee-actions .ee-submit:hover {{
+      background: #2ea043;
+    }}
+    #eePreviewInfo {{
+      min-height: 18px;
+      margin-top: 9px;
+      color: #8b949e;
+      font-size: 0.75rem;
+      font-family: monospace;
+    }}
+    @media (max-width: 900px) {{
+      .main-grid {{ grid-template-columns: 1fr; }}
+      .stream-container {{ width: 100%; height: auto; aspect-ratio: 4 / 3; }}
+      .ee-grid {{ grid-template-columns: repeat(4, minmax(90px, 1fr)); }}
+    }}
   </style>
 </head>
 <body>
@@ -1154,6 +1342,31 @@ class WebControlApp:
         <button onclick="stepChange('gripper', -100)">Đóng Kẹp</button>
         <button onclick="resetScene()" style="color: #ff7b72; border-color: #f85149;">🔄 Reset Scene</button>
       </div>
+    </div>
+
+    <!-- Absolute EE target: preview on the ghost model, then submit to ROS. -->
+    <div class="ee-card">
+      <h3>Move EE with Coord</h3>
+      <div class="ee-help">
+        Nhập pose tool0 trong frame <code>base_link</code>. XYZ dùng mét;
+        quaternion theo thứ tự <code>qx, qy, qz, qw</code>.
+        Preview chỉ di chuyển robot ảo trong Third-Person; Submit mới gọi
+        <code>Robot.set_tcp_pose()</code> cho robot thật.
+      </div>
+      <div class="ee-grid">
+        <label class="ee-field">X (m)<input id="ee_x" type="number" step="0.001" value="0.300"></label>
+        <label class="ee-field">Y (m)<input id="ee_y" type="number" step="0.001" value="0.000"></label>
+        <label class="ee-field">Z (m)<input id="ee_z" type="number" step="0.001" value="0.250"></label>
+        <label class="ee-field">qx<input id="ee_qx" type="number" step="0.001" value="0.000"></label>
+        <label class="ee-field">qy<input id="ee_qy" type="number" step="0.001" value="0.000"></label>
+        <label class="ee-field">qz<input id="ee_qz" type="number" step="0.001" value="0.000"></label>
+        <label class="ee-field">qw<input id="ee_qw" type="number" step="0.001" value="1.000"></label>
+      </div>
+      <div class="ee-actions">
+        <button onclick="previewEE()">🔎 Preview trên Third-Person</button>
+        <button class="ee-submit" onclick="moveEE()">▶ Submit: set_tcp_pose</button>
+      </div>
+      <div id="eePreviewInfo"></div>
     </div>
 
     <!-- Camera USB: 2 thiet bi V4L, luon hien, doc lap hoan toan voi robot -->
@@ -1418,6 +1631,58 @@ class WebControlApp:
       }}
     }}
 
+    function readEEPose() {{
+      const ids = ["ee_x", "ee_y", "ee_z", "ee_qx", "ee_qy", "ee_qz", "ee_qw"];
+      const values = ids.map(id => parseFloat(document.getElementById(id).value));
+      if (values.some(v => !Number.isFinite(v))) {{
+        showErr("Pose EE phai gom 7 so huu han.");
+        return null;
+      }}
+      const qNorm = Math.hypot(values[3], values[4], values[5], values[6]);
+      if (qNorm < 1e-9) {{
+        showErr("Quaternion khong duoc la vector 0.");
+        return null;
+      }}
+      return {{
+        position: values.slice(0, 3),
+        quaternion: values.slice(3).map(v => v / qNorm)
+      }};
+    }}
+
+    function updateEEPreviewInfo(data, prefix) {{
+      const el = document.getElementById("eePreviewInfo");
+      if (!el || !data) return;
+      const p = (data.actual_position || data.position || []).map(v => Number(v).toFixed(3));
+      const err = Number(data.position_error_m);
+      el.innerText = prefix + " | EE preview: [" + p.join(", ") + "] m" +
+                     (Number.isFinite(err) ? " | loi vi tri " + (err * 1000).toFixed(1) + " mm" : "");
+    }}
+
+    function previewEE() {{
+      const pose = readEEPose();
+      if (!pose) return;
+      post("/api/ee_preview", pose).then(d => {{
+        if (d && d.status === "ok") {{
+          switchStream("third");
+          updateEEPreviewInfo(d, "Preview thanh cong");
+        }} else if (d) {{
+          updateEEPreviewInfo(d, "Preview that bai: " + (d.message || "IK khong hop le"));
+        }}
+      }});
+    }}
+
+    function moveEE() {{
+      const pose = readEEPose();
+      if (!pose) return;
+      if (!confirm("Xac nhan gui set_tcp_pose va di chuyen robot that toi pose nay?")) return;
+      post("/api/move_ee", pose).then(d => {{
+        if (d && d.status === "ok") {{
+          updateEEPreviewInfo(d, "Da gui set_tcp_pose");
+          fetchStatus();
+        }}
+      }});
+    }}
+
     function fetchStatus() {{
       fetch("/api/status")
         .then(r => r.json())
@@ -1431,6 +1696,9 @@ class WebControlApp:
           updateApplyButton();
           // Loi tu thread FollowTrajectory (neu co) phai hien ra, khong im lang.
           if (tj.error) showErr("Lỗi di chuyển robot thật: " + tj.error);
+          if (data.ee_preview) {{
+            updateEEPreviewInfo(data.ee_preview, "Preview đang hiển thị");
+          }}
 
           // Cap nhat TCP
           if (data.tcp_pos) {{
