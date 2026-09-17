@@ -56,12 +56,17 @@ class GraspPointPolicy(Policy):
         self._orientation = np.zeros(4)
         self._start_pos = np.zeros(3)
         self._descended_m = 0.0
+        # Trang thai cua lan quan sat truoc, de hoc J tu chinh buoc vua roi.
+        self._last_tcp: np.ndarray | None = None
+        self._last_gripper_px: tuple[float, float] | None = None
 
     # ------------------------------------------------------------------ vong doi
     def reset(self, episode: Episode) -> None:
         """Bat dau episode moi: quen diem dich cu, chup lai huong va goc."""
         self._target_px = None
         self._descended_m = 0.0
+        self._last_tcp = None
+        self._last_gripper_px = None
         self._orientation = np.array(self.robot.tcp_quat, dtype=np.float64)
         self._start_pos = np.array(self.robot.tcp_pos, dtype=np.float64)
         if not np.all(np.isfinite(self._orientation)):
@@ -90,13 +95,30 @@ class GraspPointPolicy(Policy):
                 % self.model.last_text[:160]
             )
 
-        error = np.array(self._target_px, dtype=np.float64) - np.array(gripper_px,
-                                                                       dtype=np.float64)
-        step = self.servo.step(error)
-
         current = np.array(self.robot.tcp_pos, dtype=np.float64)
         if not np.all(np.isfinite(current)):
             raise RuntimeError("tcp_pos khong hop le khi tinh lenh")
+
+        # Hoc J tu chinh buoc vua roi. Day la nguyen lieu mien phi: tay da di roi,
+        # anh da doi roi, chi viec ghi lai. Dung TCP DO DUOC chu khong phai toa do
+        # da ra lenh - tay bam theo lech 13-20 mm nen dung luong da ra lenh se
+        # nhet sai so bam do vao J.
+        if self._last_tcp is not None and self._last_gripper_px is not None:
+            predicted = self.servo.observe(
+                current - self._last_tcp,
+                np.array(gripper_px, dtype=np.float64) - np.array(self._last_gripper_px,
+                                                                  dtype=np.float64),
+            )
+            if predicted is not None:
+                self.log("     [hoc J] %d cap, sai so du doan truoc do %.1f px, cond %.1f"
+                         % (self.servo.estimator.updates, predicted, self.servo.cond))
+        self._last_tcp = current.copy()
+        self._last_gripper_px = (float(gripper_px[0]), float(gripper_px[1]))
+
+        error = np.array(self._target_px, dtype=np.float64) - np.array(gripper_px,
+                                                                       dtype=np.float64)
+        self.servo.check()
+        step = self.servo.step(error)
 
         target = current + step.delta_m
         target[2] = max(target[2], self.z_floor_m)
