@@ -1,9 +1,9 @@
 {
   "robot": {
-    "backend": "myarm_m750",
-    "port": "/dev/ttyACM1",
+    "backend": "mock_myarm_m750",
+    "port": "/dev/null",
     "baudrate": 1000000,
-    "power_on": true,
+    "power_on": false,
     "fresh_mode": 0,
     "reference_frame": 0,
     "movement_type": 0,
@@ -28,8 +28,8 @@
     "gripper_open_value": 100,
     "gripper_close_value": 0,
     "gripper_use_value_api": false,
-    "reset_sleep_s": 1.0,
-    "wait_for_motion": true,
+    "reset_sleep_s": 0.0,
+    "wait_for_motion": false,
     "wait_timeout_s": 20.0,
     "tcp_pose_source": "hardware",
     "se3_integration_mode": "bridge_exact",
@@ -41,8 +41,8 @@
     "periodic_resync_every_n_steps": 10,
     "periodic_resync_position_threshold_m": 0.05,
     "periodic_resync_rotation_threshold_rad": 0.1,
-    "control_period_s": 1,
-    "post_command_sleep_s": 0.02,
+    "control_period_s": 0,
+    "post_command_sleep_s": 0.0,
     "hardware_read_settle_s": 0.03,
     "reset_readback_sync": true,
     "neutral_orientation_rpy_rad": [
@@ -118,7 +118,7 @@
     }
   },
   "rollout": {
-    "checkpoint_dir": "../octo_weights/finetuned_pytorch/experiment_20260420_024612",
+    "checkpoint_dir": "",
     "dataset_key": "myarm_stage_a_dataset",
     "window_size": 2,
     "exec_horizon": 1,
@@ -128,11 +128,11 @@
     "octo_resize_avg_scale": 1.0,
     "octo_resize_avg_ratio": 1.0,
     "control_rate_hz": 1.0,
-    "max_steps": 120,
+    "max_steps": 12,
     "device": "cuda",
     "fp16": false,
     "seed": 0,
-    "save_dir": "./artifacts/myarm_eval",
+    "save_dir": "./artifacts/dryrun_eval",
     "show_camera_preview": false,
     "preview_layout": "side_by_side",
     "preview_show_labels": true,
@@ -142,7 +142,7 @@
     "save_mock_plot_path": null,
     "terminate_on_truncation": true,
     "enable_debug_logging": true,
-    "save_debug_csv_path": "./artifacts/myarm_eval/robot_debug_trace.csv",
-    "save_debug_plot_path": "./artifacts/myarm_eval/robot_debug_trace.png"
+    "save_debug_csv_path": "./artifacts/dryrun_eval/robot_debug_trace.csv",
+    "save_debug_plot_path": "./artifacts/dryrun_eval/robot_debug_trace.png"
   }
 }

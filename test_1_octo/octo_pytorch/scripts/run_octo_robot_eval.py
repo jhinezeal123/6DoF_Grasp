@@ -316,6 +316,12 @@ def main():
 
         robot = _build_robot(cfg)
         robot.connect()
+        # Ap cau hinh thiet bi (fresh_mode, movement_type, end_type,
+        # gripper_enabled, world/tool reference) NGAY sau khi ket noi.
+        # Ban goc chi goi ham nay trong khoi finally, tuc la ca rollout chay voi
+        # cau hinh thiet bi tuy tien, va reset_to_home() o env.reset() ben duoi
+        # la chuyen dong dau tien da xay ra TRUOC khi cau hinh.
+        robot.configure_for_policy()
 
         requested_control_period_s = float(getattr(cfg.robot, "control_period_s", 0.0))
         if requested_control_period_s <= 0.0:
