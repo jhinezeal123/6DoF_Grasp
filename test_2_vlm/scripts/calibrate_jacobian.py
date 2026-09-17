@@ -19,18 +19,25 @@ CALIBRATION PHAI CHIA CHO DELTA DA RA LENH, khong phai delta do duoc. J o day mo
 ta anh huong cua LENH, nen sai so bam theo cua tay duoc bu tru thay vi thoi
 phong J len ~65%. (Da tung ket luan sai cho nay o test 1.)
 
-Cach do: tai tu the dau P, hoi model ngon kep o dau -> g0. Lan luot ra lenh
-+2cm x, +2cm y, -2cm z (moi lan ve P truoc), hoi lai -> g1, g2, g3. Ba cot cua J
-la (g_i - g0)/step. Ve P.
+Cach do: tai tu the dau P, hoi model ngon kep o dau -> g0. Voi moi truc, ra lenh
+di MOT buoc 6 cm va hoi model ngon kep o dau, roi ve P. Ba cot cua J la
+(g_i - g0)/6cm. Tong 4 lan goi model (~60 s).
+
+Buoc 6 cm chu khong phai 2 cm: model tra loi theo boi so 5 don vi (3.6 px theo y,
+6.4 px theo x), nen buoc 2 cm chi dich anh 10-40 px = 3-6 muc luong tu, qua thoi
+de do. Buoc 6 cm cho tin hieu gap 3.
+
+Da thu cach nhanh hon - goi model mot lan roi bam mau anh - va KHONG dung duoc,
+xem ghi chu o REPEATS.
 
 Nhan dien ngon kep: HOI MODEL, khong do mau. Do that tren canh lam viec dem duoc
 11 vat do (ghe do, ao do, do tren ban, nguoi di lai) va khong vat nao trong so do
 la ngon kep - loc mau don thuan khong the phan biet. Moi lan hoi ~15 s.
 
-An toan: buoc 2cm la nho; huong giu nguyen (lay tu tcp_quat thuc te, khong doan);
-luon ve tu the dau trong finally.
+An toan: huong giu nguyen (lay tu tcp_quat thuc te, khong doan); luon ve tu the
+dau trong finally.
 
-Chay:  python scripts/calibrate_jacobian.py [--step 0.02] [--dry-run]
+Chay:  python scripts/calibrate_jacobian.py [--step 0.06] [--dry-run]
 """
 
 from __future__ import annotations
@@ -54,6 +61,21 @@ import program.ros_bridge as ros_bridge  # noqa: E402
 
 from vla.physbrain_model import PhysBrainClient, PhysBrainError  # noqa: E402
 from vla.prompts import GRIPPER_QUESTION, POINT_SUFFIX  # noqa: E402
+
+# So buoc cong don cho moi truc. 1 buoc = 6 cm.
+#
+# Da thu cach nhanh hon - goi model mot lan roi bam mau anh (khop mau, optical
+# flow, tam khoi do) - va KHONG dung duoc: khop mau va optical flow deu bam vao
+# van mat ban va troi 40-47 px so voi model; khoi do chi tim duoc 9 diem anh
+# quanh ngon kep. Ngon kep la vat toi, nho, tren nen toi lom dom.
+#
+# Nen cach nhanh dung la TANG BIEN DO chu khong tang so lan do: buoc 6 cm cho
+# tin hieu anh gap 3 so voi buoc 2 cm, tuc gap ~3 lan so voi muc luong tu 3.6 px
+# cua model. Di kem: bo luon 6 lan goi model o cac buoc trung gian va cac lan
+# quay ve (quay ve chi de tai vi tri, khong can do). Tong 4 lan goi (~60 s) thay
+# vi 10 lan (~150 s).
+REPEATS = 1
+DEFAULT_STEP_M = 0.06
 
 # /dev/video2 = SPCA2650 = camera primary. Phai ep CAP_V4L2, khong thi OpenCV
 # chon GStreamer va bao "Failed to open camera 'primary' on index 2".
@@ -101,11 +123,46 @@ def capture_frame(cap: cv2.VideoCapture, tag: str) -> np.ndarray:
     return frame
 
 
+def track_point(prev: np.ndarray, nxt: np.ndarray, point, *,
+                half: int = 40, search: int = 140):
+    """Bam mot diem tu khung `prev` sang khung `nxt` bang khop mau.
+
+    Tra ve ((x, y), diem_khop) hoac (None, 0.0) neu vung mau khong con vua.
+
+    Y tuong: goi model mot lan de biet ngon kep o dau, roi theo vet no bang khop
+    mau. Moi lan goi model mat ~15 s, khop mau mat ~1 ms - nhanh hon 15000 lan.
+
+    Vi sao dung duoc o day ma khong dung duoc cho servo ca episode: trong luc hieu
+    chuan, tay chi di 2-6 cm co kiem soat nen ngon kep khong roi khoi vung mau.
+    Suot episode gap vat thi ngon kep di rat xa, mau se truot - cho do van phai
+    hoi model.
+    """
+    height, width = prev.shape[:2]
+    x, y = int(round(point[0])), int(round(point[1]))
+    x0, y0 = max(0, x - half), max(0, y - half)
+    x1, y1 = min(width, x + half), min(height, y + half)
+    template = prev[y0:y1, x0:x1]
+    if template.size == 0:
+        return None, 0.0
+
+    sx0, sy0 = max(0, x - search), max(0, y - search)
+    sx1, sy1 = min(width, x + search), min(height, y + search)
+    region = nxt[sy0:sy1, sx0:sx1]
+    if template.shape[0] > region.shape[0] or template.shape[1] > region.shape[1]:
+        return None, 0.0
+
+    result = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
+    _, score, _, location = cv2.minMaxLoc(result)
+    # Cong nua kich thuoc mau vi matchTemplate tra ve goc tren-trai cua vung khop.
+    return ((sx0 + location[0] + template.shape[1] / 2.0,
+             sy0 + location[1] + template.shape[0] / 2.0), float(score))
+
+
 # --------------------------------------------------------------------------- #
 def main() -> int:
     parser = argparse.ArgumentParser(description="Do Jacobian command -> image.")
-    parser.add_argument("--step", type=float, default=0.02,
-                        help="do dich moi buoc, met (mac dinh 0.02 = 2cm)")
+    parser.add_argument("--step", type=float, default=DEFAULT_STEP_M,
+                        help="do dich moi buoc, met (mac dinh 0.06 = 6cm)")
     parser.add_argument("--dry-run", action="store_true",
                         help="do thu, KHONG ra lenh chuyen dong")
     args = parser.parse_args()
@@ -208,9 +265,10 @@ def main() -> int:
             ("z", np.array([0.0, 0.0, -1.0])))
 
     def goto(offset_xyz, tag: str):
-        """Ra lenh toi p0 + offset, cho dung han, hoi model ngon kep o dau.
+        """Ra lenh toi p0 + offset, cho dung han, tra ve khung anh da chup.
 
-        Tra ve (diem_anh, tcp_do_duoc, text_model).
+        KHONG goi model o day nua - ben goi tu quyet dinh khi nao can hoi model
+        (15 s) va khi nao chi can bam mau (1 ms). Xem track_point().
         """
         target = p0 + np.asarray(offset_xyz, dtype=float)
         if not args.dry_run:
@@ -220,47 +278,82 @@ def main() -> int:
             if not wait_settled(commanded=target):
                 raise RuntimeError("tay khong dung yen sau 25s (tag=%s)" % tag)
         frame = capture_frame(cap, tag)
-        tcp = np.array(robot.tcp_pos, dtype=float)
-        print("  [%s] hoi model (co the mat ~15s)..." % tag)
-        t_start = time.time()
+        return frame, np.array(robot.tcp_pos, dtype=float)
+
+    def ask(frame) -> tuple[float, float] | None:
         point, text = model_point(frame, GRIPPER_Q)
-        print("  [%s] model tra loi sau %.1fs: %s" % (tag, time.time() - t_start, text.strip()))
-        return point, tcp, text
+        print("     model: %s" % text.strip())
+        return point
 
     points: dict[str, tuple[float, float]] = {}
     moved: dict[str, np.ndarray] = {}
-    origin = None
+    check_cost = 0
     try:
-        print("\n=== DIEM GOC ===")
-        g0, t0, _ = goto(np.zeros(3), "g0")
+        print("\n=== DIEM GOC (goi model) ===")
+        frame0, t0 = goto(np.zeros(3), "g0")
+        g0 = ask(frame0)
         if g0 is None:
             raise RuntimeError("model khong chi duoc ngon kep o tu the goc")
-        origin, points["0"] = t0, g0
+        points["0"], moved["0"] = g0, np.zeros(3)
         print("  g0 = (%.1f, %.1f) px   tcp = %s" % (g0[0], g0[1], np.round(t0, 4)))
 
+        # Voi moi truc: di CONG DON 1, 2, 3 buoc. Chi goi model o buoc CUOI cua
+        # moi truc; cac buoc con lai bam mau. So lan goi model: 1 + 3 = 4 (~60 s)
+        # thay vi 10 (~150 s).
+        #
+        # Bam mau duoc vi trong luc hieu chuan tay chi di 2-6 cm co kiem soat.
+        # Lan goi model o buoc cuoi khong phai de lay so lieu ma de BAT TRÔI: neu
+        # diem bam mau va diem model lech nhau nhieu thi ket qua khong dang tin.
         for name, direction in AXES:
-            print("\n=== BUOC %s: %+.0f mm theo %s ==="
-                  % (name, direction[np.argmax(np.abs(direction))] * args.step * 1000, name))
-            point, tcp, _ = goto(direction * args.step, "g_" + name)
-            if point is None:
-                raise RuntimeError("model khong chi duoc ngon kep sau buoc %s" % name)
-            points[name], moved[name] = point, tcp - t0
-            delta_px = np.array(point) - np.array(g0)
-            print("  g_%s = (%.1f, %.1f) px   dich anh = (%.2f, %.2f) px   |d| = %.1f px"
-                  % (name, point[0], point[1], delta_px[0], delta_px[1],
-                     float(np.linalg.norm(delta_px))))
-            print("  dich TCP thuc = %s m" % np.round(tcp - t0, 4))
+            print("\n=== TRUC %s: 3 buoc cong don %+.0f mm moi buoc ==="
+                  % (name, args.step * 1000))
+            previous_frame, previous_point = frame0, g0
+            for k in range(1, REPEATS + 1):
+                tag = "%s_%d" % (name, k)
+                frame, tcp = goto(direction * args.step * k, tag)
+                moved[tag] = tcp - t0
 
-            # Chot chan: TCP khong doi thi moi con so J deu la nhieu. Lan chay dau da
-            # cho ra J "dep" (cond=2.1) tu mot con tay dung im - phai chan tu day.
-            if not args.dry_run and np.linalg.norm(tcp - t0) < args.step * 0.2:
-                raise RuntimeError(
-                    "tay KHONG di chuyen o buoc %s: lenh %.0f mm nhung TCP chi doi %.2f mm. "
-                    "Kiem tra is_armed / motion_state truoc khi tin vao J."
-                    % (name, args.step * 1000, np.linalg.norm(tcp - t0) * 1000))
+                tracked, score = track_point(previous_frame, frame, previous_point)
+                last = (k == REPEATS)
+                if tracked is None or score < 0.5:
+                    print("  [%s] bam mau truot (diem khop %.2f) -> goi model" % (tag, score))
+                    point = ask(frame)
+                    check_cost += 1
+                elif last:
+                    # Kiem chung o buoc xa nhat: bam mau co troi khong?
+                    verified = ask(frame)
+                    check_cost += 1
+                    if verified is None:
+                        raise RuntimeError("model khong chi duoc ngon kep o buoc %s" % tag)
+                    drift = float(np.linalg.norm(np.array(verified) - np.array(tracked)))
+                    print("  [%s] bam mau (%.1f, %.1f) vs model (%.1f, %.1f): lech %.1f px"
+                          % (tag, tracked[0], tracked[1], verified[0], verified[1], drift))
+                    if drift > 10.0:
+                        raise RuntimeError(
+                            "bam mau troi %.1f px so voi model o buoc %s. Ket qua J se sai;"
+                            " dung lai thay vi ghi file." % (drift, tag))
+                    point = tracked
+                else:
+                    point = tracked
+                    print("  [%s] bam mau (diem khop %.2f)" % (tag, score))
+
+                if point is None:
+                    raise RuntimeError("khong xac dinh duoc ngon kep o buoc %s" % tag)
+                points[tag] = point
+                d = np.array(point) - np.array(g0)
+                print("  [%s] buoc %d: (%.1f, %.1f) px   doi anh (%+.1f, %+.1f) px"
+                      % (tag, k, point[0], point[1], d[0], d[1]))
+
+                if not args.dry_run and np.linalg.norm(tcp - t0) < args.step * k * 0.2:
+                    raise RuntimeError(
+                        "tay KHONG di chuyen o buoc %s: lenh %.0f mm nhung TCP chi doi %.2f mm. "
+                        "Kiem tra is_armed / motion_state truoc khi tin vao J."
+                        % (tag, args.step * k * 1000, np.linalg.norm(tcp - t0) * 1000))
+
+                previous_frame, previous_point = frame, point
 
             print("\n=== VE TU THE DAU ===")
-            _, tb, _ = goto(np.zeros(3), "gb_" + name)
+            _, tb = goto(np.zeros(3), "gb_" + name)
             print("  lech TCP so voi goc = %s m" % np.round(tb - t0, 4))
 
     finally:
@@ -273,17 +366,26 @@ def main() -> int:
                   % (np.round(back, 4), np.linalg.norm(back - p0) * 1000))
         cap.release()
 
-    missing = [n for n, _ in AXES if n not in points]
+    missing = [n for n, _ in AXES
+               if any("%s_%d" % (n, k) not in points for k in range(1, REPEATS + 1))]
     if "0" not in points or missing:
         print("\nLOI: thieu diem do cho truc %s. Khong tinh duoc J." % (missing or "goc"))
         return 1
 
-    # Chia cho DO DICH CO DAU, khong phai args.step. Truc z do bang offset -0.02
-    # (di xuong), nen chia cho +0.02 se lat nguoc dau cot z: J bao "ha xuong thi
-    # anh di len", va servo se lenh tay BAY LEN thay vi ha xuong. Da dinh dung
-    # loi nay mot lan - log in ra buoc z = +20.0 mm trong khi phai la -142 mm.
-    columns = [(np.array(points[name]) - np.array(points["0"])) / (direction[axis] * args.step)
-               for axis, (name, direction) in enumerate(AXES)]
+    # Khop binh phuong nho nhat qua goc cho tung truc: slope = sum(x*y)/sum(x*x)
+    # voi x = k*step (co dau), y = diem_anh(k) - diem_anh(0).
+    columns, slopes = [], {}
+    for name, direction in AXES:
+        xs = np.array([k * args.step for k in range(1, REPEATS + 1)])
+        ys = np.array([np.array(points["%s_%d" % (name, k)]) - np.array(points["0"])
+                       for k in range(1, REPEATS + 1)])
+        slope = (xs[:, None] * ys).sum(axis=0) / (xs ** 2).sum()
+        columns.append(slope)
+        slopes[name] = slope
+        # Do lech con lai so voi duong thang: neu lon thi model doc khong nhat quan.
+        predicted = np.outer(xs, slope)
+        residual = float(np.abs(ys - predicted).max())
+        print("  truc %s: khop %d diem, sai lech lon nhat %.1f px" % (name, REPEATS, residual))
     J = np.column_stack(columns)
 
     print("\n" + "=" * 66)
@@ -330,6 +432,7 @@ def main() -> int:
         "J": J.tolist(),
         "axes": [name for name, _ in AXES],
         "step_m": args.step,
+        "repeats": REPEATS,
         "p0": p0.tolist(),
         "q0": q0.tolist(),
         "points_px": {k: list(v) for k, v in points.items()},
