@@ -27,35 +27,33 @@ Chay:  python scripts/calibrate_jacobian.py [--step 0.02] [--dry-run]
 from __future__ import annotations
 
 import argparse
-import base64
 import json
-import re
 import sys
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
-import requests
 
 SDK_DIR = Path("/workspace/6DoF_Grasp/htc/SDK")
 sys.path.insert(0, str(SDK_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from program.robot.robot import Robot  # noqa: E402
 from program.ros_bridge import get_bridge  # noqa: E402
 import program.ros_bridge as ros_bridge  # noqa: E402
+
+from vla.physbrain_model import PhysBrainClient, PhysBrainError  # noqa: E402
+from vla.prompts import GRIPPER_QUESTION, POINT_SUFFIX  # noqa: E402
 
 # /dev/video2 = SPCA2650 = camera primary. Phai ep CAP_V4L2, khong thi OpenCV
 # chon GStreamer va bao "Failed to open camera 'primary' on index 2".
 CAM_INDEX = 2
 CAM_W, CAM_H = 1280, 720
 
-SERVER = "http://127.0.0.1:8081"
+GRIPPER_Q = GRIPPER_QUESTION
 
-# Suffix CHINH XAC cua nhom tac gia (EmbodiedEvalKit, xem P1_KET_QUA.md §1).
-# Toa do tra ve chuan hoa 0-1000; pixel = x/1000*rong. Nhiet do 0 (greedy).
-POINT_SUFFIX = 'The answer should be presented in JSON format as follows: [{"point_2d": [x, y]}].'
-GRIPPER_Q = "Point to the red gripper fingers at the tip of the robot arm."
+_CLIENT = PhysBrainClient("http://127.0.0.1:8081")
 
 OUT = Path(__file__).resolve().parents[1] / "configs" / "servo_jacobian.json"
 ART = Path(__file__).resolve().parents[1] / "artifacts"
@@ -65,43 +63,18 @@ ART.mkdir(parents=True, exist_ok=True)
 # --------------------------------------------------------------------------- #
 # Thi giac: hoi model ngon kep nam o dau
 # --------------------------------------------------------------------------- #
-def model_point(frame: np.ndarray, question: str, timeout_s: float = 120.0):
+def model_point(frame: np.ndarray, question: str):
     """Hoi model mot diem trong khung. Tra ((px, py), text_tho) hoac (None, text).
 
-    Khong nem loi khi model tra loi sai dinh dang: ben goi can phan biet "model
-    khong thay ngon kep" voi "server chet", va ca hai deu phai dung duoc servo.
+    Dung CHUNG PhysBrainClient voi run_pipeline.py: bo parse o do da biet chiu ca
+    kieu JSON cua tac gia lan kieu tuple Python, va da tung sua mot lan vi model
+    tra sai khuon. Nhan doi cho nay ra la de hai ban troi lech nhau.
     """
-    ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
-    if not ok:
-        return None, "khong ma hoa duoc anh"
-    data_url = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
-
-    payload = {
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": data_url}},
-                {"type": "text", "text": question + "\n" + POINT_SUFFIX},
-            ],
-        }],
-        "temperature": 0.0,
-        "max_tokens": 64,
-    }
     try:
-        response = requests.post(SERVER + "/v1/chat/completions", json=payload,
-                                 timeout=timeout_s)
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"]
-    except Exception as exc:  # noqa: BLE001 - bao loi that ra ngoai
+        point = _CLIENT.point(frame, question + "\n" + POINT_SUFFIX)
+    except PhysBrainError as exc:
         return None, "loi goi model: %s" % exc
-
-    match = re.search(r'"point_2d"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]', text)
-    if not match:
-        return None, text
-    h, w = frame.shape[:2]
-    px = float(match.group(1)) / 1000.0 * w
-    py = float(match.group(2)) / 1000.0 * h
-    return (px, py), text
+    return point, _CLIENT.last_text
 
 
 def capture_frame(cap: cv2.VideoCapture, tag: str) -> np.ndarray:
@@ -308,7 +281,8 @@ def main() -> int:
         "det": det,
         "cond": cond,
         "offsets_deg": list(np.round(ros_bridge.OFFSETS_DEG, 4)),
-        "detector": {"kind": "model_point_2d", "server": SERVER, "question": GRIPPER_Q},
+        "detector": {"kind": "physbrain_point_2d", "server": _CLIENT.url,
+                     "question": GRIPPER_Q},
         "camera": {"index": CAM_INDEX, "width": CAM_W, "height": CAM_H},
     }, indent=2))
     print("\nDa ghi:", OUT)

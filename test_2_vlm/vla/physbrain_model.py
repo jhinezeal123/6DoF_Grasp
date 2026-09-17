@@ -16,8 +16,23 @@ import requests
 
 from .prompts import POINT_SUFFIX, pixels
 
-# Model tra ve dung dinh dang nay khi moi thu binh thuong.
-_POINT_RE = re.compile(r'"point_2d"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]')
+# Model KHONG phai luc nao cung theo dung khuon JSON cua tac gia. Do that tren
+# may nay bat duoc ca hai kieu tra loi cho cung mot cau hoi:
+#     [{"point_2d": [545, 575]}]      <- dung khuon (da so)
+#     [(520, 570)]                    <- kieu tuple Python
+# Chi khop mot kieu thi cu vai lan goi la vo mot lan, rat kho lan ra nguyen nhan.
+_POINT_RES = (
+    re.compile(r'"point_2d"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]'),
+    re.compile(r"[([]\s*(\d+)\s*,\s*(\d+)\s*[)\]]"),
+)
+
+
+def _parse_point(text: str) -> tuple[int, int] | None:
+    for pattern in _POINT_RES:
+        match = pattern.search(text)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    return None
 
 
 class PhysBrainError(RuntimeError):
@@ -86,10 +101,10 @@ class PhysBrainClient:
         self.last_latency_s = time.monotonic() - started
         self.last_text = text
 
-        match = _POINT_RE.search(text)
-        if not match:
+        match = _parse_point(text)
+        if match is None:
             return None
-        return pixels((int(match.group(1)), int(match.group(2))), frame_rgb.shape)
+        return pixels(match, frame_rgb.shape)
 
 
 __all__ = ["PhysBrainClient", "PhysBrainError", "POINT_SUFFIX"]
