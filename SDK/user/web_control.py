@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import json
+import multiprocessing as mp
 import threading
 from urllib.parse import urlparse
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -40,6 +41,98 @@ STREAM_KEYS = {
 # Camera USB: mot duong dan cho moi thiet bi trong USB_CAMERAS, de chi co MOT
 # cho khai bao thiet bi (program/camera/usb_camera.py).
 STREAM_KEYS.update({"/stream/cam_%s.mjpg" % key: key for key, _ in USB_CAMERAS})
+
+
+def _mujoco_render_worker(scene_path, camera_specs, fps, command_recv,
+                          frame_send):
+    """Render MuJoCo frames outside the HTTP/ROS process.
+
+    On the headless Jetson, the first MuJoCo/EGL render can block while holding
+    the Python interpreter lock.  Keeping it in the web process prevents the
+    RosBridge spin thread from running, so the UI reports NaN even though the
+    driver is publishing feedback.  This worker owns its own model, data and
+    EGL contexts; the parent only sends qpos snapshots and receives JPEGs.
+    """
+    renderers = []
+    try:
+        # Imports must happen in the spawned process after it has its own EGL
+        # context.  Importing MuJoCo in the parent is still needed by FakeRobot.
+        import mujoco
+
+        model = mujoco.MjModel.from_xml_path(scene_path)
+        data = mujoco.MjData(model)
+        for key, camera_name, width, height in camera_specs:
+            renderer = mujoco.Renderer(model, height=int(height), width=int(width))
+            try:
+                flags = renderer._scene.flags
+                flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
+                flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 0
+            except Exception:
+                pass
+            cam_id = mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_CAMERA, camera_name)
+            renderers.append((key, renderer, cam_id))
+
+        latest_qpos = None
+        preview_active = False
+        preview_site_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SITE, "tool0_preview")
+        interval = 1.0 / max(float(fps), 1.0)
+        next_frame = time.monotonic()
+        while True:
+            # Drain the pipe so a burst of slider updates cannot make the
+            # worker render stale poses.
+            while command_recv.poll():
+                packet = command_recv.recv()
+                if packet is None:
+                    return
+                if isinstance(packet, tuple):
+                    packet, preview_active = packet
+                latest_qpos = np.asarray(packet, dtype=np.float64).reshape(-1)
+
+            if latest_qpos is not None and latest_qpos.size == model.nq:
+                data.qpos[:] = latest_qpos
+                mujoco.mj_forward(model, data)
+            if preview_site_id >= 0:
+                model.site_rgba[preview_site_id, 3] = 0.95 if preview_active else 0.0
+
+            for key, renderer, cam_id in renderers:
+                if cam_id >= 0:
+                    renderer.update_scene(data, camera=cam_id)
+                else:
+                    renderer.update_scene(data)
+                frame = renderer.render()
+                jpeg = ImageCompressor.encode_jpeg(frame, quality=75)
+                if jpeg:
+                    try:
+                        frame_send.send((key, jpeg))
+                    except (BrokenPipeError, EOFError, OSError):
+                        return
+
+            next_frame += interval
+            wait = next_frame - time.monotonic()
+            if wait > 0:
+                # poll() both sleeps without a busy loop and lets the parent
+                # stop the worker promptly by sending the None sentinel.
+                if command_recv.poll(wait):
+                    packet = command_recv.recv()
+                    if packet is None:
+                        return
+                    if isinstance(packet, tuple):
+                        packet, preview_active = packet
+                    latest_qpos = np.asarray(packet, dtype=np.float64).reshape(-1)
+            else:
+                next_frame = time.monotonic()
+    except (EOFError, OSError, BrokenPipeError):
+        pass
+    except Exception as exc:
+        print(f"[WebRenderWorker] Loi render: {exc}", flush=True)
+    finally:
+        for _, renderer, _ in renderers:
+            try:
+                renderer.close()
+            except Exception:
+                pass
 
 
 class ThreadedWebServer(ThreadingMixIn, HTTPServer):
@@ -530,6 +623,12 @@ class WebControlApp:
         self._jpeg_cache = {"sim": None, "real": None}
         self._jpeg_lock = threading.Lock()
         self._render_thread = None
+        # MuJoCo/EGL lives in a separate process.  The parent keeps ownership
+        # of FakeRobot for IK/status, while the worker owns its renderers.
+        self._render_process = None
+        self._render_cmd_send = None
+        self._render_frame_recv = None
+        self._render_frame_thread = None
 
         # Camera USB: chi de xem, khong lien quan robot. Moi camera tu chay thread
         # rieng (xem program/camera/usb_camera.py) nen vong render o duoi KHONG
@@ -714,66 +813,155 @@ class WebControlApp:
 
     def _start_render_thread(self):
         """
-        Thread render DUY NHAT cho tat ca camera.
+        Start the state synchronizer and the isolated MuJoCo render worker.
 
-        Renderer MuJoCo/EGL gan chat vao thread da tao no, nen phai tao trong
-        chinh thread nay (tao o thread khac -> EGL_BAD_ACCESS / frame rong).
+        The old implementation rendered in this process.  On headless EGL that
+        call can block while holding the Python interpreter lock, starving the
+        RosBridge callback thread.  The worker process below owns the MuJoCo
+        renderers; this process only mirrors/snapshots qpos and serves JPEGs.
         """
         if self._render_thread is not None:
             return
-        cams = {"sim": self.cam_sim, "third": self.cam_third, "real": self.cam_real}
+        sim_cams = []
+        for key, cam in (("sim", self.cam_sim), ("third", self.cam_third)):
+            if cam is None or not getattr(cam, "is_simulation", False):
+                continue
+            sim_cams.append((key, cam.camera_name, cam.width, cam.height))
 
-        def loop():
-            # Renderer phai thuoc ve thread nay. Neu camera da bi render o thread
-            # khac (vd: test goi photo() truoc), bo di de tao lai trong thread nay,
-            # neu khong photo() tra frame RONG ma khong bao loi.
-            for cam in cams.values():
-                if cam is not None and getattr(cam, "is_simulation", False):
-                    cam.reset_renderer()
+        # No MuJoCo camera is a valid configuration (for example a small API
+        # embedding that only wants robot state).  Keep the synchronizer alive
+        # for the parent FakeRobot, but do not spawn an idle worker.
+        cmd_recv = cmd_send = frame_recv = frame_send = None
+        process = None
+        if sim_cams:
+            # ``spawn`` is deliberate: fork would copy rclpy's DDS thread and
+            # MuJoCo state into the child, which is unsafe for both libraries.
+            ctx = mp.get_context("spawn")
+            cmd_recv, cmd_send = ctx.Pipe(duplex=False)
+            frame_recv, frame_send = ctx.Pipe(duplex=False)
+            scene_path = getattr(self.fake_robot, "scene_path", None)
+            if not scene_path:
+                raise RuntimeError("FakeRobot khong luu scene_path cho render worker")
+            process = ctx.Process(
+                target=_mujoco_render_worker,
+                args=(scene_path, sim_cams, self.stream_fps,
+                      cmd_recv, frame_send),
+                name="MuJoCoRenderWorker",
+                daemon=True,
+            )
+            process.start()
+            # The child owns these endpoints; parent only retains send/recv.
+            cmd_recv.close()
+            frame_send.close()
+
+        self._render_process = process
+        self._render_cmd_send = cmd_send
+        self._render_frame_recv = frame_recv
+
+        def receive_frames():
+            while self.running or (process is not None and process.is_alive()):
+                if frame_recv is None:
+                    return
+                try:
+                    if not frame_recv.poll(0.2):
+                        continue
+                    key, jpeg = frame_recv.recv()
+                except (EOFError, OSError):
+                    return
+                if jpeg:
+                    with self._jpeg_lock:
+                        self._jpeg_cache[key] = jpeg
+
+        if frame_recv is not None:
+            self._render_frame_thread = threading.Thread(
+                target=receive_frames, name="WebRenderFrames", daemon=True)
+            self._render_frame_thread.start()
+
+        def sync_loop():
             last_mirror = 0.0
+            last_sent = None
+            last_preview = None
             while self.running:
-                # Mode CONTROL: mirror pose robot that -> sim de third-person/cam_sim
-                # di theo slider. Thieu buoc nay m/d chi duoc ghi luc chuyen mode
-                # -> view dong bang o pose cu (dung bug nguoi dung bao).
-                # Throttle 5Hz: qpos_cached co TTL 50ms nen khong doc serial moi frame.
                 now = time.time()
                 do_mirror = (now - last_mirror) >= 0.2
-                # Che do offset/simulate: KHONG keo pose that vao sim, de nguoi dung
-                # con can con robot ao bang slider.
-                # Phai goi NGOAI _mj_lock: display_override_active() lay self._lock,
-                # ma trong _mj_lock thi thanh thu tu _mj_lock -> _lock, nguoc voi moi
-                # handler (_lock -> _mj_lock) -> deadlock ABBA. Xem ghi chu o
-                # khai bao self._lock / self._mj_lock trong __init__.
+                # Keep lock order _lock -> _mj_lock.  The mode check must happen
+                # before taking _mj_lock to avoid the old ABBA deadlock.
                 display_override = self.display_override_active()
-                # MOI truy cap MuJoCo (mirror + photo) trong _mj_lock: thread HTTP
-                # (status/lenh) dung chung khoa nay -> khong bao gio co 2 mj_forward
-                # chong nhau tren cung m/d (nguyen nhan segfault da do).
-                with self._mj_lock:
-                    if do_mirror:
-                        last_mirror = now
-                        if not display_override:
-                            try:
+                try:
+                    with self._mj_lock:
+                        if do_mirror:
+                            last_mirror = now
+                            if not display_override:
                                 self.fake_robot.mirror_real()
-                            except Exception as e:
-                                # Mirror hong khong duoc giet ca thread render (view se
-                                # dong bang, nhung server van song de bao loi).
-                                print(f"[WebControl] Loi mirror real->sim: {e}")
-                    for key, cam in cams.items():
-                        if cam is None:
-                            continue
-                        try:
-                            frame = cam.photo()
-                            if frame is not None and frame.size > 0:
-                                jpeg = ImageCompressor.encode_jpeg(frame, quality=75)
-                                if jpeg:
-                                    with self._jpeg_lock:
-                                        self._jpeg_cache[key] = jpeg
-                        except Exception as e:
-                            print(f"[WebControl] Loi render '{key}': {e}")
+                        qpos = self.fake_robot.mj_qpos
+                except Exception as exc:
+                    print(f"[WebControl] Loi dong bo MuJoCo: {exc}")
+                    qpos = None
+
+                if qpos is not None and cmd_send is not None:
+                    try:
+                        with self._lock:
+                            preview_active = self._ee_preview is not None
+                        # Avoid filling the pipe with identical snapshots while
+                        # still sending every actual pose change promptly.
+                        if (last_sent is None or not np.array_equal(qpos, last_sent)
+                                or preview_active != last_preview):
+                            cmd_send.send((qpos, preview_active))
+                            last_sent = qpos.copy()
+                            last_preview = preview_active
+                    except (BrokenPipeError, EOFError, OSError):
+                        break
+
+                # A ROS camera is not EGL backed, so it can remain in the parent
+                # loop.  The default web app has no cam_real, but this preserves
+                # the optional real camera stream API.
+                if self.cam_real is not None and not getattr(self.cam_real, "is_simulation", False):
+                    try:
+                        frame = self.cam_real.photo()
+                        if frame is not None and frame.size > 0:
+                            jpeg = ImageCompressor.encode_jpeg(frame, quality=75)
+                            if jpeg:
+                                with self._jpeg_lock:
+                                    self._jpeg_cache["real"] = jpeg
+                    except Exception as exc:
+                        print(f"[WebControl] Loi render 'real': {exc}")
                 time.sleep(1.0 / max(self.stream_fps, 1.0))
 
-        self._render_thread = threading.Thread(target=loop, name="WebRender", daemon=True)
+        # Retain the historical attribute name for diagnostics/tests.  This is
+        # now only a lightweight synchronizer; MuJoCo rendering is in process.
+        self._render_thread = threading.Thread(
+            target=sync_loop, name="WebRenderSync", daemon=True)
         self._render_thread.start()
+
+    def _stop_render_worker(self):
+        """Stop the isolated renderer and release its IPC endpoints."""
+        sender = self._render_cmd_send
+        process = self._render_process
+        if sender is not None:
+            try:
+                sender.send(None)
+            except (BrokenPipeError, EOFError, OSError):
+                pass
+            try:
+                sender.close()
+            except Exception:
+                pass
+            self._render_cmd_send = None
+
+        if process is not None:
+            process.join(timeout=3.0)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=2.0)
+        self._render_process = None
+
+        receiver = self._render_frame_recv
+        if receiver is not None:
+            try:
+                receiver.close()
+            except Exception:
+                pass
+            self._render_frame_recv = None
 
     def active_control_object(self, sid: str = ""):
         """Object ma tab nay dang dieu khien truc tiep (theo mode cua CHINH tab do)."""
@@ -2203,6 +2391,7 @@ class WebControlApp:
         finally:
             self.running = False
             httpd.server_close()
+            self._stop_render_worker()
             for cam in self.usb_cams.values():
                 cam.stop()
 

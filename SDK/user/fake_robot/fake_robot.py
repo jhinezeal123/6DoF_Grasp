@@ -47,7 +47,13 @@ class FakeRobot(Robot):
 
     def __init__(self, scene_path: Optional[str] = None) -> None:
         super().__init__()
-        self.m = mujoco.MjModel.from_xml_path(scene_path or SCENE_XML)
+        # Keep the absolute scene path so the web renderer can open an
+        # independent MuJoCo model in a worker process.  MuJoCo/EGL rendering
+        # can block the Python interpreter on headless Jetson systems; sharing
+        # the renderer with the ROS bridge process then prevents ROS callbacks
+        # from updating the hardware state cache.
+        self.scene_path = os.path.abspath(scene_path or SCENE_XML)
+        self.m = mujoco.MjModel.from_xml_path(self.scene_path)
         self.d = mujoco.MjData(self.m)
         self.qpos_addrs = [self.m.joint(n).qposadr[0] for n in self.JOINT_NAMES]
         self.dof_addrs = [self.m.joint(n).dofadr[0] for n in self.JOINT_NAMES]
