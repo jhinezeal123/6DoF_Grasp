@@ -38,6 +38,7 @@ from program.robot.robot import Robot                     # noqa: E402
 from program.ros_bridge import get_bridge                 # noqa: E402
 
 from vla.guard import WorkspaceGuard                      # noqa: E402
+from vla.online_jacobian import OnlineJacobian            # noqa: E402
 from vla.physbrain_model import PhysBrainClient           # noqa: E402
 from vla.policy import GraspPointPolicy                   # noqa: E402
 from vla.primary_camera import PrimaryCamera              # noqa: E402
