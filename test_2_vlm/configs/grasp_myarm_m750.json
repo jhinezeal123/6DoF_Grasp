@@ -24,7 +24,8 @@
 
   "safety": {
     "reach_m": 0.30,
-    "z_floor_m": 0.02,
+    "_z_floor_doc": "0.24 m = ngang dinh khoi xanh (nguoi dung xac nhan). Mat tham ~0.18 m, khoi xanh cao ~50 mm. Dau ngon kep thoa xuong duoi TCP ~20-40 mm nen muc nay giu dau ngon cach mat tham.",
+    "z_floor_m": 0.24,
     "z_ceiling_m": 0.60,
     "max_jump_m": 0.10,
     "max_descend_m": 0.28,
