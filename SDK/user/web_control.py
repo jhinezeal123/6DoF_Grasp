@@ -962,10 +962,16 @@ class WebControlApp:
 
             if tab == "coordinate":
                 if self._ee_preview is None:
-                    return {"ok": False,
-                            "message": "Chua co pose EE preview de dua sang robot that"}
-                position = np.asarray(self._ee_preview["position"], dtype=np.float64)
-                quaternion = np.asarray(self._ee_preview["quaternion"], dtype=np.float64)
+                    # Selecting the coordinate tab and pressing Submit without
+                    # touching a slider should still apply the pose currently
+                    # shown by the ghost model.
+                    with self._mj_lock:
+                        position, quaternion = self.fake_robot.tcp_pose()
+                    position = np.asarray(position, dtype=np.float64)
+                    quaternion = np.asarray(quaternion, dtype=np.float64)
+                else:
+                    position = np.asarray(self._ee_preview["position"], dtype=np.float64)
+                    quaternion = np.asarray(self._ee_preview["quaternion"], dtype=np.float64)
                 result = self._move_ee_pose_locked(position, quaternion)
                 if result.get("ok"):
                     result["message"] = "Da gui set_tcp_pose tu pose EE mo phong"
@@ -1915,12 +1921,19 @@ class WebControlApp:
               let holdPending = false;
               if (pendingEE) {{
                 const target = pendingEE.pose.position;
+                const targetQ = pendingEE.pose.quaternion;
                 const error = Math.hypot(
                   Number(p[0]) - target[0],
                   Number(p[1]) - target[1],
                   Number(p[2]) - target[2]
                 );
-                if (Date.now() <= pendingEE.until && error > 0.005) {{
+                const qError = Math.min(
+                  Math.hypot(Number(q[0]) - targetQ[0], Number(q[1]) - targetQ[1],
+                             Number(q[2]) - targetQ[2], Number(q[3]) - targetQ[3]),
+                  Math.hypot(Number(q[0]) + targetQ[0], Number(q[1]) + targetQ[1],
+                             Number(q[2]) + targetQ[2], Number(q[3]) + targetQ[3])
+                );
+                if (Date.now() <= pendingEE.until && (error > 0.005 || qError > 0.04)) {{
                   holdPending = true;
                 }} else {{
                   pendingEE = null;
