@@ -674,6 +674,12 @@ class WebControlApp:
         except ValueError as exc:
             return {"ok": False, "message": str(exc)}
         with self._lock:
+            if not self.real_robot.is_armed:
+                return {"ok": False,
+                        "message": "Robot chua armed; bam KHÔI PHỤC truoc khi Submit"}
+            if not self.real_robot.is_real_connected:
+                return {"ok": False,
+                        "message": "Robot khong co feedback moi; kiem tra nguon va cap USB"}
             if self._traj_thread is not None and self._traj_thread.is_alive():
                 return {"ok": False, "message": "Robot dang chay quy dao khac"}
             try:

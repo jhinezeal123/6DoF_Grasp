@@ -15,10 +15,17 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+from pathlib import Path
 
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
 os.environ.setdefault("TRANSFORMERS_NO_JAX", "1")
+
+# Ensure we import local repo, not an older editable install.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
