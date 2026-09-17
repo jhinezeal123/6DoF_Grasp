@@ -1,0 +1,105 @@
+<mujoco model="myarm_m750">
+  <compiler angle="radian" coordinate="local" meshdir="meshes/visual/"/>
+  <option gravity="0 0 -9.81"/>
+
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+  </visual>
+
+  <asset>
+    <mesh name="base_mesh" file="base_link.dae"/>
+    <mesh name="shoulder_mesh" file="shoulder_link.dae"/>
+    <mesh name="upper_arm_mesh" file="upper_arm_link.dae"/>
+    <mesh name="lower_arm_mesh" file="lower_arm_link.dae"/>
+    <mesh name="forearm_mesh" file="forearm_link.dae"/>
+    <mesh name="wrist_mesh" file="wrist_link.dae"/>
+    <mesh name="gripper_base_mesh" file="gripper_base_link.dae"/>
+    <mesh name="left_gripper_mesh" file="left_gripper_link.dae"/>
+    <mesh name="right_gripper_mesh" file="right_gripper_link.dae"/>
+    
+    <material name="robot_metal" rgba="0.85 0.85 0.88 1.0" specular="0.5" shininess="0.8"/>
+    <material name="robot_dark" rgba="0.2 0.2 0.22 1.0" specular="0.3" shininess="0.5"/>
+    <material name="accent_blue" rgba="0.1 0.5 0.8 1.0" specular="0.4" shininess="0.6"/>
+  </asset>
+
+  <worldbody>
+    <light diffuse=".6 .6 .6" pos="0 0 3" dir="0 0 -1"/>
+    <geom name="ground" type="plane" size="1.5 1.5 0.1" rgba="0.92 0.92 0.92 1"/>
+
+    <!-- Base Link -->
+    <body name="base_link" pos="0 0 0">
+      <geom type="mesh" mesh="base_mesh" material="robot_dark"/>
+      <geom type="box" size="0.09 0.09 0.05" pos="0 0 0.05" rgba="0.2 0.2 0.2 0.3" group="1" contype="0" conaffinity="0"/>
+
+      <!-- Joint 1: shoulder_pan_joint -->
+      <body name="shoulder_link" pos="0 0 0.0979">
+        <joint name="shoulder_pan_joint" type="hinge" axis="0 0 1" range="-2.8798 2.8798" damping="0.5"/>
+        <geom type="mesh" mesh="shoulder_mesh" material="robot_metal"/>
+        <geom type="cylinder" size="0.07 0.035" pos="0 0 0.035" rgba="0.8 0.8 0.8 0.3" group="1" contype="0" conaffinity="0"/>
+
+        <!-- Joint 2: shoulder_lift_joint -->
+        <body name="upper_arm_link" pos="0 0 0.0760">
+          <joint name="shoulder_lift_joint" type="hinge" axis="0 1 0" range="-1.5708 1.5708" damping="0.5"/>
+          <geom type="mesh" mesh="upper_arm_mesh" material="robot_metal" euler="1.5708 -1.5708 0"/>
+          <geom type="capsule" fromto="0 0 0 0.057 0 0.303" size="0.04" rgba="0.2 0.6 0.8 0.3" group="1"/>
+
+          <!-- Joint 3: elbow_flex_joint -->
+          <body name="lower_arm_link" pos="0.057 0 0.303">
+            <joint name="elbow_flex_joint" type="hinge" axis="0 1 0" range="-1.5708 1.5708" damping="0.5"/>
+            <geom type="mesh" mesh="lower_arm_mesh" material="robot_metal" euler="-1.5708 0 0"/>
+            <geom type="cylinder" size="0.045 0.0394" pos="0.0394 0 0" rgba="0.8 0.8 0.8 0.3" group="1"/>
+
+            <!-- Joint 4: forearm_roll_joint -->
+            <body name="forearm_link" pos="0.0788 0 0">
+              <joint name="forearm_roll_joint" type="hinge" axis="1 0 0" range="-2.7925 2.7925" damping="0.3"/>
+              <geom type="mesh" mesh="forearm_mesh" material="robot_metal" pos="-0.009 0 0" euler="-3.1416 -1.5708 0"/>
+              <geom type="capsule" fromto="0 0 0 0.2491 0 0" size="0.035" rgba="0.2 0.6 0.8 0.3" group="1"/>
+
+              <!-- Joint 5: wrist_flex_joint -->
+              <body name="wrist_link" pos="0.24911 0 0">
+                <joint name="wrist_flex_joint" type="hinge" axis="0 1 0" range="-1.5708 2.0944" damping="0.3"/>
+                <geom type="mesh" mesh="wrist_mesh" material="robot_metal" euler="-1.5708 0 0"/>
+                <geom type="cylinder" size="0.04 0.0395" pos="0.0395 0 0" rgba="0.8 0.8 0.8 0.3" group="1"/>
+
+                <!-- Joint 6: wrist_roll_joint -->
+                <body name="flange_link" pos="0.0790 0 0">
+                  <joint name="wrist_roll_joint" type="hinge" axis="1 0 0" range="-3.1416 3.1416" damping="0.2"/>
+                  <geom type="cylinder" size="0.03 0.015" pos="0.015 0 0" rgba="0.9 0.2 0.2 0.4" group="1"/>
+
+                  <!-- Gripper Base -->
+                  <body name="gripper_base_link" pos="0.0310 0 0" euler="0 1.5708 0">
+                    <geom type="mesh" mesh="gripper_base_mesh" material="robot_dark" pos="0 0 -0.0427"/>
+                    
+                    <!-- Left Gripper Finger -->
+                    <body name="left_gripper_link" pos="0 0.0080 0" euler="1.5708 0 -3.1416">
+                      <joint name="left_gripper_joint" type="slide" axis="0 0 1" range="0 0.0345" damping="0.1"/>
+                      <geom type="mesh" mesh="left_gripper_mesh" material="accent_blue" pos="0 -0.0079 0" euler="0 3.1416 -1.5708"/>
+                    </body>
+
+                    <!-- Right Gripper Finger -->
+                    <body name="right_gripper_link" pos="0 -0.0080 0" euler="1.5708 0 -3.1416">
+                      <joint name="right_gripper_joint" type="slide" axis="0 0 -1" range="0 0.0345" damping="0.1"/>
+                      <geom type="mesh" mesh="right_gripper_mesh" material="accent_blue" pos="0 -0.0079 0" euler="0 3.1416 -1.5708"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="pos_j1" joint="shoulder_pan_joint" kp="100" kv="10" ctrlrange="-2.8798 2.8798"/>
+    <position name="pos_j2" joint="shoulder_lift_joint" kp="150" kv="15" ctrlrange="-1.5708 1.5708"/>
+    <position name="pos_j3" joint="elbow_flex_joint" kp="100" kv="10" ctrlrange="-1.5708 1.5708"/>
+    <position name="pos_j4" joint="forearm_roll_joint" kp="50" kv="5" ctrlrange="-2.7925 2.7925"/>
+    <position name="pos_j5" joint="wrist_flex_joint" kp="40" kv="4" ctrlrange="-1.5708 2.0944"/>
+    <position name="pos_j6" joint="wrist_roll_joint" kp="30" kv="3" ctrlrange="-3.1416 3.1416"/>
+    <position name="pos_left_gripper" joint="left_gripper_joint" kp="200" kv="20" ctrlrange="0 0.0345"/>
+    <position name="pos_right_gripper" joint="right_gripper_joint" kp="200" kv="20" ctrlrange="0 0.0345"/>
+  </actuator>
+</mujoco>

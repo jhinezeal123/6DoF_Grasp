@@ -1,0 +1,11 @@
+{
+    "name": "libero_spatial",
+    "builder_dir": "/home/ceec/khoanhd/VLABenchMark_Lab/modified_libero_rlds/libero_spatial_no_noops/1.0.0",
+    "image_obs_keys": {
+        "primary": "image"
+    },
+    "proprio_obs_key": null,
+    "language_key": "language_instruction",
+    "dataset_statistics": "/home/ceec/khoanhd/VLABenchMark_Lab/modified_libero_rlds/libero_spatial_no_noops/1.0.0/dataset_statistics.json",
+    "dataset_statistics_key": "libero_spatial"
+}

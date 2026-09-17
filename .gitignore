@@ -1,0 +1,19 @@
+# Da thanh git root rieng: khanhtai/ + test_hardware/ nam NGOAI repo nay.
+
+# Python
+__pycache__/
+*.pyc
+
+# Mesh: file .dae nang, khong commit (dung .obj/.stl)
+*.dae
+
+# Thu muc tam khi chay live
+.htc_live_tmp/
+
+# Simulator: kich thuoc lon, thuoc ve TUNG MAY
+simu/
+
+# Calibration sinh ra luc chay (nut Luu o che do chinh offset) - thuoc ve TUNG MAY,
+# khong duoc di theo code. sync.ps1 dung `git add -A` nen thieu dong nay la lan push
+# toi se ghim offset cua mot may vao repo.
+SDK/program/offsets.json

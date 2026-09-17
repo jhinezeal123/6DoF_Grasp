@@ -1,0 +1,102 @@
+== Benchmark camera: /dev/video0 | 5.0s/config ==
+== cv2 4.5.4 ==
+== Lock exposure: locked=156 ==
+[RUN ] YUYV 640x480@30 [v4l2]
+[DONE] YUYV 640x480@30 [v4l2] -> 30.0 fps | CPU 87.6% | RSS 127 MB | std 2.06 ms | p99 36.61 ms
+[RUN ] YUYV 640x480@30 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+[DONE] YUYV 640x480@30 [gst-sw] -> 30.1 fps | CPU 25.4% | RSS 134 MB | std 2.23 ms | p99 36.08 ms
+[RUN ] YUYV 800x600@24 [v4l2]
+[DONE] YUYV 800x600@24 [v4l2] -> 15.0 fps | CPU 42.2% | RSS 136 MB | std 2.14 ms | p99 68.42 ms
+[RUN ] YUYV 800x600@24 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+[DONE] YUYV 800x600@24 [gst-sw] -> 15.1 fps | CPU 19.8% | RSS 136 MB | std 3.08 ms | p99 70.07 ms
+[RUN ] YUYV 1280x720@10 [v4l2]
+[DONE] YUYV 1280x720@10 [v4l2] -> 10.0 fps | CPU 29.5% | RSS 141 MB | std 3.00 ms | p99 102.24 ms
+[RUN ] YUYV 1280x720@10 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+[DONE] YUYV 1280x720@10 [gst-sw] -> 10.1 fps | CPU 24.4% | RSS 140 MB | std 4.59 ms | p99 103.99 ms
+[RUN ] YUYV 1920x1080@5 [v4l2]
+[DONE] YUYV 1920x1080@5 [v4l2] -> 5.0 fps | CPU 15.4% | RSS 157 MB | std 2.99 ms | p99 200.36 ms
+[RUN ] YUYV 1920x1080@5 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+[DONE] YUYV 1920x1080@5 [gst-sw] -> 5.0 fps | CPU 26.8% | RSS 158 MB | std 6.00 ms | p99 201.83 ms
+[RUN ] MJPG 640x480@30 [v4l2]
+[DONE] MJPG 640x480@30 [v4l2] -> 30.0 fps | CPU 11.0% | RSS 139 MB | std 2.11 ms | p99 37.01 ms
+[RUN ] MJPG 640x480@30 [gst-hw]
+NvMMLiteOpen : Block : BlockType = 277 
+NvMMLiteBlockCreate : Block : BlockType = 277 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (2075) handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module v4l2src4 reported: Internal data stream error.
+NVMMLITE_NVVIDEODEC, <NvVideoBufferProcessing:6086> Consume the extra signalling for EOS 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1053) open OpenCV | GStreamer warning: unable to start pipeline
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (616) isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created
+[FAIL] MJPG 640x480@30 [gst-hw] -> pipeline GStreamer khong mo duoc (gst-hw)
+[RUN ] MJPG 640x480@30 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=1, value=7, duration=-1
+[DONE] MJPG 640x480@30 [gst-sw] -> 30.0 fps | CPU 23.1% | RSS 142 MB | std 1.97 ms | p99 37.71 ms
+[RUN ] MJPG 1280x720@30 [v4l2]
+[DONE] MJPG 1280x720@30 [v4l2] -> 30.1 fps | CPU 31.8% | RSS 152 MB | std 2.29 ms | p99 36.96 ms
+[RUN ] MJPG 1280x720@30 [gst-hw]
+NvMMLiteOpen : Block : BlockType = 277 
+NvMMLiteBlockCreate : Block : BlockType = 277 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (2075) handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module v4l2src6 reported: Internal data stream error.
+NVMMLITE_NVVIDEODEC, <NvVideoBufferProcessing:6086> Consume the extra signalling for EOS 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1053) open OpenCV | GStreamer warning: unable to start pipeline
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (616) isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created
+[FAIL] MJPG 1280x720@30 [gst-hw] -> pipeline GStreamer khong mo duoc (gst-hw)
+[RUN ] MJPG 1280x720@30 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=1, value=7, duration=-1
+[DONE] MJPG 1280x720@30 [gst-sw] -> 30.2 fps | CPU 62.8% | RSS 157 MB | std 2.62 ms | p99 38.19 ms
+[RUN ] MJPG 1280x720@60 [v4l2]
+[DONE] MJPG 1280x720@60 [v4l2] -> 29.7 fps | CPU 30.9% | RSS 157 MB | std 2.17 ms | p99 37.40 ms
+[RUN ] MJPG 1280x720@60 [gst-hw]
+NvMMLiteOpen : Block : BlockType = 277 
+NvMMLiteBlockCreate : Block : BlockType = 277 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (2075) handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module v4l2src8 reported: Internal data stream error.
+NVMMLITE_NVVIDEODEC, <NvVideoBufferProcessing:6086> Consume the extra signalling for EOS 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1053) open OpenCV | GStreamer warning: unable to start pipeline
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (616) isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created
+[FAIL] MJPG 1280x720@60 [gst-hw] -> pipeline GStreamer khong mo duoc (gst-hw)
+[RUN ] MJPG 1280x720@60 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=1, value=13, duration=-1
+[DONE] MJPG 1280x720@60 [gst-sw] -> 29.8 fps | CPU 60.7% | RSS 158 MB | std 2.54 ms | p99 37.85 ms
+[RUN ] MJPG 1920x1080@30 [v4l2]
+[DONE] MJPG 1920x1080@30 [v4l2] -> 29.9 fps | CPU 67.6% | RSS 174 MB | std 2.66 ms | p99 37.53 ms
+[RUN ] MJPG 1920x1080@30 [gst-hw]
+NvMMLiteOpen : Block : BlockType = 277 
+NvMMLiteBlockCreate : Block : BlockType = 277 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (2075) handleMessage OpenCV | GStreamer warning: Embedded video playback halted; module v4l2src10 reported: Internal data stream error.
+NVMMLITE_NVVIDEODEC, <NvVideoBufferProcessing:6086> Consume the extra signalling for EOS 
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1053) open OpenCV | GStreamer warning: unable to start pipeline
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (616) isPipelinePlaying OpenCV | GStreamer warning: GStreamer: pipeline have not been created
+[FAIL] MJPG 1920x1080@30 [gst-hw] -> pipeline GStreamer khong mo duoc (gst-hw)
+[RUN ] MJPG 1920x1080@30 [gst-sw]
+[ WARN:0] global /home/ktmt-agx-xv/Downloads/opencv/modules/videoio/src/cap_gstreamer.cpp (1100) open OpenCV | GStreamer warning: Cannot query video position: status=1, value=7, duration=-1
+[DONE] MJPG 1920x1080@30 [gst-sw] -> 22.6 fps | CPU 101.0% | RSS 168 MB | std 1.68 ms | p99 46.40 ms
+== Da tra exposure ve auto ==
+
+== TOM TAT (exposure: locked=156) ==
+config                              fps     CPU%   std(ms)   p99(ms)
+YUYV 640x480@30 v4l2               30.0     87.6      2.06     36.61
+YUYV 640x480@30 gst-sw             30.1     25.4      2.23     36.08
+YUYV 800x600@24 v4l2               15.0     42.2      2.14     68.42
+YUYV 800x600@24 gst-sw             15.1     19.8      3.08     70.07
+YUYV 1280x720@10 v4l2              10.0     29.5      3.00    102.24
+YUYV 1280x720@10 gst-sw            10.1     24.4      4.59    103.99
+YUYV 1920x1080@5 v4l2               5.0     15.4      2.99    200.36
+YUYV 1920x1080@5 gst-sw             5.0     26.8      6.00    201.83
+MJPG 640x480@30 v4l2               30.0     11.0      2.11     37.01
+MJPG 640x480@30 gst-hw                -        -         -         -
+MJPG 640x480@30 gst-sw             30.0     23.1      1.97     37.71
+MJPG 1280x720@30 v4l2              30.1     31.8      2.29     36.96
+MJPG 1280x720@30 gst-hw               -        -         -         -
+MJPG 1280x720@30 gst-sw            30.2     62.8      2.62     38.19
+MJPG 1280x720@60 v4l2              29.7     30.9      2.17     37.40
+MJPG 1280x720@60 gst-hw               -        -         -         -
+MJPG 1280x720@60 gst-sw            29.8     60.7      2.54     37.85
+MJPG 1920x1080@30 v4l2             29.9     67.6      2.66     37.53
+MJPG 1920x1080@30 gst-hw              -        -         -         -
+MJPG 1920x1080@30 gst-sw           22.6    101.0      1.68     46.40
+
+CSV : /workspace/6DoF_Grasp/htc/benchmark_camera/benchmark_results.csv
+JSON: /workspace/6DoF_Grasp/htc/benchmark_camera/benchmark_report.json

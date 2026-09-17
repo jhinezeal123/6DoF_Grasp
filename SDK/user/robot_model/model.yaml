@@ -1,0 +1,14 @@
+config_version: 1
+model:
+  source_xacro: urdf/myarm_m750.urdf.xacro
+  manifest: config/model_manifest.json
+  default_variant: full
+  variants:
+    full: urdf/generated/myarm_m750_full.urdf
+    lightweight: urdf/generated/myarm_m750_lightweight.urdf
+    kinematic: urdf/generated/myarm_m750_kinematic.urdf
+  base_link: base_link
+  flange_link: flange_link
+  end_link: tool0
+  dynamics_enabled: false
+  collision_provenance: provisional_primitives

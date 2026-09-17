@@ -1,0 +1,203 @@
+<!-- Derived from myarm_m750.xml for MuJoCo.
+     - meshes: .dae (Collada) -> .obj (MuJoCo gioi han STL 200k faces, OBJ thi khong)
+     - mesh geoms: contype=0 conaffinity=0 (visual-only); collision dung primitive geom
+     - goc sinh tu dong, nhung DA SUA TAY va khong the sinh lai tu URDF:
+         * integrator="implicitfast"  (Euler mac dinh -> phan ky)
+         * 9 khoi inertial tinh bang tich phan the tich co dau cua mesh
+         * <equality> mimic cho right_gripper_joint -> nu=7
+         * geom va cham cho 2 ngon kep (URDF co nhung bi bo mat khi sinh)
+         * DAO TRUC 2 joint kep so voi URDF (xem comment truoc <equality>)
+         * camera wrist_cam = goc nhin thu nhat, eye-in-hand
+       => KHONG duoc ghi de file nay bang mot model sinh tu dong. -->
+<mujoco model="myarm_m750_mujoco">
+  <compiler angle="radian" coordinate="local" meshdir="meshes/mujoco/"/>
+  <!-- integrator=implicitfast la BAT BUOC, khong phai tuy chon.
+       Voi mac dinh Euler, mo phong phan ky ngay khi co lenh ctrl
+       (qpos[0] nhay len 1741 rad). Da do: Euler -> -0.371 (sai),
+       implicitfast -> 1.000000 (dung). -->
+  <option gravity="0 0 -9.81" integrator="implicitfast"/>
+
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+  </visual>
+
+  <asset>
+    <mesh name="base_mesh" file="base_link.obj"/>
+    <mesh name="shoulder_mesh" file="shoulder_link.obj"/>
+    <mesh name="upper_arm_mesh" file="upper_arm_link.obj"/>
+    <mesh name="lower_arm_mesh" file="lower_arm_link.obj"/>
+    <mesh name="forearm_mesh" file="forearm_link.obj"/>
+    <mesh name="wrist_mesh" file="wrist_link.obj"/>
+    <mesh name="gripper_base_mesh" file="gripper_base_link.obj"/>
+    <mesh name="left_gripper_mesh" file="left_gripper_link.obj"/>
+    <mesh name="right_gripper_mesh" file="right_gripper_link.obj"/>
+    
+    <material name="robot_metal" rgba="0.85 0.85 0.88 1.0" specular="0.5" shininess="0.8"/>
+    <material name="robot_dark" rgba="0.2 0.2 0.22 1.0" specular="0.3" shininess="0.5"/>
+    <material name="accent_blue" rgba="0.1 0.5 0.8 1.0" specular="0.4" shininess="0.6"/>
+  </asset>
+
+  <worldbody>
+    <light diffuse=".6 .6 .6" pos="0 0 3" dir="0 0 -1"/>
+    <geom name="ground" type="plane" size="1.5 1.5 0.1" rgba="0.92 0.92 0.92 1"/>
+
+    <!-- Base Link -->
+    <body name="base_link" pos="0 0 0">
+      <inertial pos="0.025782267 0.00115366832 -0.0421035886" quat="0.574045613 -0.45023338 -0.569667693 0.378470946" mass="0.61013151" diaginertia="0.00132709133 0.00119563507 0.000979347747"/>
+      <geom type="mesh" contype="0" conaffinity="0" mesh="base_mesh" material="robot_dark"/>
+      <geom type="box" size="0.09 0.09 0.05" pos="0 0 0.05" rgba="0.2 0.2 0.2 0" group="1" contype="0" conaffinity="0"/>
+
+      <!-- Joint 1: shoulder_pan_joint -->
+      <body name="shoulder_link" pos="0 0 0.0979">
+        <inertial pos="-0.000190260866 -0.000173020848 0.0526216698" quat="0.58767754 -0.533115935 -0.549510407 -0.261650187" mass="0.287756687" diaginertia="0.000913316549 0.0010109759 0.000519701575"/>
+        <joint name="shoulder_pan_joint" type="hinge" axis="0 0 1" range="-2.8798 2.8798" damping="0.5"/>
+        <geom type="mesh" contype="0" conaffinity="0" mesh="shoulder_mesh" material="robot_metal"/>
+        <geom type="cylinder" size="0.07 0.035" pos="0 0 0.035" rgba="0.8 0.8 0.8 0" group="1" contype="0" conaffinity="0"/>
+
+        <!-- Joint 2: shoulder_lift_joint -->
+        <body name="upper_arm_link" pos="0 0 0.0760">
+          <inertial pos="-0.00198242584 -0.220115856 -0.0106842016" quat="0.466994746 -0.36427418 0.70132715 -0.39668685" mass="0.163165528" diaginertia="0.000398656563 0.00166330159 0.00181192377"/>
+          <joint name="shoulder_lift_joint" type="hinge" axis="0 1 0" range="-1.5708 1.5708" damping="0.5"/>
+          <geom type="mesh" contype="0" conaffinity="0" mesh="upper_arm_mesh" material="robot_metal" quat="0.5 0.5 -0.5 0.5"/>
+          <geom type="capsule" fromto="0 0 0 0.057 0 0.303" size="0.04" rgba="0.2 0.6 0.8 0" group="1"/>
+
+          <!-- Joint 3: elbow_flex_joint -->
+          <body name="lower_arm_link" pos="0.057 0 0.303">
+            <inertial pos="0.0333461406 0.00264526068 2.96971138e-05" quat="-0.189133931 0.785079673 -0.549163192 -0.215169823" mass="0.0479433744" diaginertia="4.34298166e-05 3.87410347e-05 5.43154676e-05"/>
+            <joint name="elbow_flex_joint" type="hinge" axis="0 1 0" range="-1.5708 1.5708" damping="0.5"/>
+            <geom type="mesh" contype="0" conaffinity="0" mesh="lower_arm_mesh" material="robot_metal" quat="0.7071 -0.7071 0 0"/>
+            <geom type="cylinder" size="0.045 0.0394" pos="0.0394 0 0" rgba="0.8 0.8 0.8 0" group="1"/>
+
+            <!-- Joint 4: forearm_roll_joint -->
+            <body name="forearm_link" pos="0.0788 0 0">
+              <inertial pos="-0.143096176 0.000209714247 -3.71598329e-06" quat="0.793037341 -0.54170113 -0.115732874 -0.253490757" mass="0.100683751" diaginertia="0.000213902437 0.000505829858 0.00067746318"/>
+              <joint name="forearm_roll_joint" type="hinge" axis="1 0 0" range="-2.7925 2.7925" damping="0.3"/>
+              <geom type="mesh" contype="0" conaffinity="0" mesh="forearm_mesh" material="robot_metal" pos="-0.009 0 0" quat="0 0.7071 0 0.7071"/>
+              <geom type="capsule" fromto="0 0 0 0.2491 0 0" size="0.035" rgba="0.2 0.6 0.8 0" group="1"/>
+
+              <!-- Joint 5: wrist_flex_joint -->
+              <body name="wrist_link" pos="0.24911 0 0">
+                <inertial pos="0.0415975981 0.000291403377 0.0068317999" quat="0.127903853 0.841139428 -0.517056588 0.0936885914" mass="0.0560195844" diaginertia="3.21975442e-05 3.9030814e-05 3.90009601e-05"/>
+                <joint name="wrist_flex_joint" type="hinge" axis="0 1 0" range="-1.5708 2.0944" damping="0.3"/>
+                <geom type="mesh" contype="0" conaffinity="0" mesh="wrist_mesh" material="robot_metal" quat="0.7071 -0.7071 0 0"/>
+                <geom type="cylinder" size="0.04 0.0395" pos="0.0395 0 0" rgba="0.8 0.8 0.8 0" group="1"/>
+
+                <!-- Joint 6: wrist_roll_joint -->
+                <body name="flange_link" pos="0.0790 0 0">
+                  <joint name="wrist_roll_joint" type="hinge" axis="1 0 0" range="-3.1416 3.1416" damping="0.2"/>
+                  <geom type="cylinder" size="0.03 0.015" pos="0.015 0 0" rgba="0.9 0.2 0.2 0" group="1"/>
+
+                  <!-- Gripper Base -->
+                  <body name="gripper_base_link" pos="0.0310 0 0" euler="0 1.5708 0">
+                    <inertial pos="-0.00707897146 -0.00225276271 -0.0184197569" quat="-0.12051804 -0.063500073 0.94613906 0.293707374" mass="0.0646011729" diaginertia="0.000106200161 6.0359128e-05 9.43675594e-05"/>
+                    <geom type="mesh" contype="0" conaffinity="0" mesh="gripper_base_mesh" material="robot_dark" pos="0 0 -0.0427"/>
+
+                    <!-- Camera goc nhin thu nhat (eye-in-hand).
+                         Frame gripper_base_link co +z = (0.6216, 0, -0.7833) tai pose HOME,
+                         dung bang truc tiep can cua kep, va KHONG doi theo joint (chi phu
+                         thuoc wrist_flex/wrist_roll), nen huong nhin on dinh.
+
+                         HUONG (quat): MuJoCo camera nhin theo -z cua chinh no, +y la huong
+                         "len" trong anh, +x la "sang phai". Nhin doc +z_body thi huong "len"
+                         TU NHIEN (vuong goc voi tia nhin, nam trong mat phang thang dung)
+                         dung bang -x_body. Quat "0 0.7071068 -0.7071068 0" (quay pi quanh
+                         truc (1,-1,0)/can2) cho:
+                             anh-right = -y_body,  anh-up = -x_body,  nhin = +z_body
+                         Da do tai HOME: anh-up . z_world = +0.6216 (>0 => huong len).
+
+                         QUAT CU "0 0 1 0" CHO anh-up = +y_body — SAI. Truc y cua
+                         gripper_base_link NAM NGANG tai HOME (y_body = (0,1,0) the gioi),
+                         nen anh-up . z_world = 0.0000: anh bi roll dung 90 do, mat ban
+                         nghieng han, va vi hai ngon kep tach nhau theo truc y nen chung
+                         hiien ra tren/duoi thay vi trai/phai.
+
+                         VI TRI: hai ngon kep dai 100 mm, bat dau cach goc kep 8 mm, nen
+                         camera nhin doc truc LUON thay chung (~36% vung sang). Vi tri nay
+                         chon de chung nam o DAY khung (dang "nhin xuong hai ham kep") va
+                         khong che vung lam viec. Do bang phep chieu 5 vat the (u,v chuan hoa,
+                         v>0 la len; |u|,|v| <= 1 la trong khung):
+                             pos                anh-up.z   2 ngon (u,v)      vat trong khung
+                             (0.055,0,0.035)     0.0000   +0.91, +-0.55    3/5   <-- CU, bi roll
+                             (0.055,0,0.035)*   +0.6216   -+0.41, +1.21    3/5   (ngon vuot len tren)
+                             (-0.055,0,0.035)   +0.6216   -+0.41, -1.21    3/5   (ngon vuot xuong duoi)
+                             (-0.045,0,0.020)   +0.6216   -+0.33, -0.80    4/5   <-- DANG DUNG
+                         (* cung vi tri, chi doi quat.)
+                         x=-0.045 nam trong AABB mesh than kep (x thuoc [-0.0525, 0.0186])
+                         nhung tai (y=0, z=0.020) khong co vat ran, va camera di cung body
+                         nen quan he nay co dinh -> khong bao gio nhin thay ruot kep.
+                         wrist_cam_body chi de nhin thay camera trong goc nhin thu ba;
+                         camera nam TRONG hop nay nhung mat gan nhat < near plane
+                         (0.01*stat.extent = 10.3 mm) nen hop khong bao gio hien trong chinh
+                         khung hinh cua no (da kiem chung: anh y het khi bo hop).
+                         contype=0 nen khong anh huong vat ly. -->
+                    <camera name="wrist_cam" pos="-0.04650 0 0.02069" quat="0 0.7071068 -0.7071068 0" fovy="70"/>
+                    <geom name="wrist_cam_body" type="box" size="0.006 0.006 0.006" pos="-0.04650 0 0.02069" rgba="0.15 0.15 0.15 1" contype="0" conaffinity="0"/>
+
+                    <!-- Left Gripper Finger -->
+                    <body name="left_gripper_link" pos="0 0.0080 0" euler="1.5708 0 -3.1416">
+                      <inertial pos="1.50589618e-07 -0.0510389493 -0.000802093096" quat="0.657896402 0.455421127 -0.558029022 -0.219926197" mass="0.0266468367" diaginertia="9.15258013e-06 1.16595007e-05 8.86948242e-06"/>
+                      <joint name="left_gripper_joint" type="slide" axis="0 0 -1" range="0 0.0345" damping="0.1"/>
+                      <geom type="mesh" contype="0" conaffinity="0" mesh="left_gripper_mesh" material="accent_blue" pos="0 -0.0079 0" quat="0 0.7071 0.7071 0"/>
+                      <geom name="left_finger_col" type="box" size="0.0263 0.0472 0.0078" pos="0 -0.0553 0" friction="1.5 0.005 0.0001"/>
+                    </body>
+
+                    <!-- Right Gripper Finger -->
+                    <body name="right_gripper_link" pos="0 -0.0080 0" euler="1.5708 0 -3.1416">
+                      <inertial pos="1.53721125e-07 -0.0500759815 0.00052550417" quat="-0.283258813 0.212082313 -0.226507385 0.907457956" mass="0.0257037087" diaginertia="7.81818735e-06 8.86956669e-06 1.14185492e-05"/>
+                      <joint name="right_gripper_joint" type="slide" axis="0 0 1" range="0 0.0345" damping="0.1"/>
+                      <geom type="mesh" contype="0" conaffinity="0" mesh="right_gripper_mesh" material="accent_blue" pos="0 -0.0079 0" quat="0 0.7071 0.7071 0"/>
+                      <geom name="right_finger_col" type="box" size="0.0263 0.0472 0.0078" pos="0 -0.0553 0" friction="1.5 0.005 0.0001"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="pos_j1" joint="shoulder_pan_joint" kp="100" kv="10" ctrlrange="-2.8798 2.8798"/>
+    <position name="pos_j2" joint="shoulder_lift_joint" kp="150" kv="15" ctrlrange="-1.5708 1.5708"/>
+    <position name="pos_j3" joint="elbow_flex_joint" kp="100" kv="10" ctrlrange="-1.5708 1.5708"/>
+    <position name="pos_j4" joint="forearm_roll_joint" kp="50" kv="5" ctrlrange="-2.7925 2.7925"/>
+    <position name="pos_j5" joint="wrist_flex_joint" kp="40" kv="4" ctrlrange="-1.5708 2.0944"/>
+    <position name="pos_j6" joint="wrist_roll_joint" kp="30" kv="3" ctrlrange="-3.1416 3.1416"/>
+    <position name="pos_left_gripper" joint="left_gripper_joint" kp="200" kv="20" ctrlrange="0 0.0345"/>
+  </actuator>
+
+  <!-- right_gripper_joint la MIMIC cua left_gripper_joint, khong doc lap.
+       URDF ghi: <mimic joint="left_gripper_joint" multiplier="1.0" offset="0.0"/>.
+       MuJoCo khong co the <mimic>, tuong duong la rang buoc equality:
+       polycoef="0 1 0 0 0" nghia la qpos[right] - qpos[left] = 0.
+       He qua: chi con 7 actuator, khop voi ktmt (driver cung chi publish 7 joint).
+
+       TRUC CUA HAI JOINT KEP DA BI DAO DAU so voi URDF (co y, khong phai loi copy).
+       URDF ghi left axis="0 0 1", right axis="0 0 -1"; file nay dung nguoc lai.
+       Ly do, do bang AABB cua mesh trong frame gripper_base_link:
+         - Voi truc cua URDF: q=0 thi hai ngoam cham nhau (khe ho 0), nhung tang q
+           thi ca hai cung chay VE PHIA NHAU roi XUYEN QUA NHAU va doi cho:
+           q=0.005 -> hai tam ngoam lech -0.010 m, q=0.017 -> -0.034 m.
+           Khe ho chi tro lai duong o q=0.0345 (36.8 mm). Nua dai [0, 0.0161] cua
+           hanh trinh la bat kha thi ve hinh hoc.
+         - Voi truc da dao: khe ho = 2*q, tuc q=0 -> 0 (khep), q=0.017 -> 34 mm,
+           q=0.0345 -> 69 mm. Don dieu, khong bao gio xuyen nhau.
+       Kiem chung doc lap: voi geom va cham cua ngon, truc URDF sinh 4 contact
+       ngon-ngon va test mimic tut xuong 5.46e-05 m; truc da dao sinh 0 contact
+       va test mimic dat 5.14e-10 m.
+       => Khi ktmt len lai PHAI doi chieu: URDF/myarm_m750.xml goc dang sai, va
+       chieu mo cua kep that can duoc xac nhan truoc khi dong bo hai ben.
+
+       solimp manh vi equality cua MuJoCo mac dinh la rang buoc MEM: do duoc voi
+       solref 0.02 1 thi khi tay chiu tai hai ngoam lech nhau 5.21e-04 m (0.52 mm),
+       tuc la khong con la mimic nua. Mimic that la thanh co khi cung, nen ep cho
+       cung: solimp="0.999 0.9999 0.0001" -> con 6.8e-06 m (0.007 mm). Da do
+       solref 0.002 nua thi chi con 2.8e-06, khong dang them mot thuoc tinh. -->
+  <equality>
+    <joint joint1="left_gripper_joint" joint2="right_gripper_joint"
+           polycoef="0 1 0 0 0" solimp="0.999 0.9999 0.0001"/>
+  </equality>
+</mujoco>

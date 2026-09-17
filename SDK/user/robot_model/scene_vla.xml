@@ -1,0 +1,81 @@
+<!-- Scene cho test model VLA: robot myarm_m750 + ban lam viec + 5 vat the don gian.
+     KHONG chua noi dung robot: <include> keo nguyen myarm_m750_mujoco.xml vao, nen
+     moi thay doi ve robot chi phai sua mot cho. Ca hai file cung thu muc nen
+     meshdir="meshes/mujoco/" trong file robot van giai dung.
+
+     Vi sao tach file thay vi nhet thang vao file robot:
+       - myarm_m750_mujoco.xml la hien vat chuan, doi chieu voi ktmt. Nhet ban va
+         vat the vao do se lam moi con so cua model robot (nq, ngeom, nbody) sai
+         lech va pha vo cac phep kiem tra trong kernel verify-v6.
+       - VLA test can doi vat the / vi tri vat theo tung episode; de rieng mot file
+         thi chi phai sua cho nay.
+
+     Hinh hoc (calib 2025-06 tu anh chup robot that tren ban foam):
+       - mat lam viec (top foam) z = 0.052; mat go ban = z = 0 = goc robot
+       - ban trai x ∈ [0.16, 0.68]; de robot x ∈ [-0.09, 0.09] nen khong cham
+       - khe kep mo toi da 69 mm (xem comment truc joint trong file robot), nen vat
+         rong <= 30 mm la gap duoc; obj_plate 60 mm la CO Y de lam ca "kho gap" -->
+<mujoco model="myarm_m750_vla_scene">
+  <include file="myarm_m750_mujoco.xml"/>
+
+  <worldbody>
+    <!-- Mat lam viec = top foam tren ban go (goc robot = mat go, z=0). Body tinh.
+
+         Chieu cao foam: do 2026-09 bang cach ha tay that xuong (lower_until_touch)
+         va tha tu do (fall_test). Ca hai deu cho ket qua nhat quan: upper_arm_link
+         bi chan khi con cach mat ban CU (0.045) khoang 6-7 mm. Vay foam that day
+         hon: 0.045 + 0.007 = 0.052. Giu nguyen mat go o z=0, chi doi chieu day
+         foam: size z 0.0225 -> 0.026 thi mat tren = 0.026 + 0.026 = 0.052. -->
+    <body name="table" pos="0.42 0 0">
+      <geom name="table_top" type="box" size="0.26 0.26 0.026" pos="0 0 0.026"
+            rgba="0.12 0.12 0.12 1" density="300"/>
+    </body>
+
+    <!-- Vat the: free joint + geom nguyen thuy. density=1200 kg/m3 de khoi luong
+         nam trong khoang 11..52 g, vua suc kep (actuator kep kp=200).
+         Dat cao hon mat ban 4 mm cho roi nhe thay vi dung y vao contact.
+         (z da cong them 7 mm theo chieu cao foam moi 0.052.) -->
+
+    <!-- Khoi lap phuong 25 mm, 18.8 g -->
+    <body name="obj_cube" pos="0.30 0.10 0.0685">
+      <freejoint name="obj_cube_free"/>
+      <geom name="obj_cube_g" type="box" size="0.0125 0.0125 0.0125"
+            rgba="0.85 0.25 0.25 1" density="1200"/>
+    </body>
+
+    <!-- Hop det 30 x 20 x 15 mm, 10.8 g -->
+    <body name="obj_box" pos="0.40 -0.10 0.0635">
+      <freejoint name="obj_box_free"/>
+      <geom name="obj_box_g" type="box" size="0.015 0.010 0.0075"
+            rgba="0.30 0.75 0.35 1" density="1200"/>
+    </body>
+
+    <!-- Hinh tru dung 28 mm x 70 mm (kieu lon), 51.7 g -->
+    <body name="obj_cyl" pos="0.46 0.05 0.091">
+      <freejoint name="obj_cyl_free"/>
+      <geom name="obj_cyl_g" type="cylinder" size="0.014 0.035"
+            rgba="0.25 0.55 0.90 1" density="1200"/>
+    </body>
+
+    <!-- Cau 28 mm, 13.8 g -->
+    <body name="obj_sphere" pos="0.35 -0.05 0.070">
+      <freejoint name="obj_sphere_free"/>
+      <geom name="obj_sphere_g" type="sphere" size="0.014"
+            rgba="0.95 0.80 0.20 1" density="1200"/>
+    </body>
+
+    <!-- Tam phang 60 x 60 x 6 mm, 25.9 g. Rong hon khe kep toi da (69 mm nhung
+         can cho de luon ngon vao) -> dung lam ca am: model VLA KHONG nen gap duoc. -->
+    <body name="obj_plate" pos="0.50 0.16 0.059">
+      <freejoint name="obj_plate_free"/>
+      <geom name="obj_plate_g" type="box" size="0.030 0.030 0.003"
+            rgba="0.70 0.70 0.72 1" density="1200"/>
+    </body>
+
+    <!-- Camera goc nhin thu ba, dat giong goc chup anh robot that (az270/el25/dist1.8
+         nhin vao (0.35,0,0.10)) de doi chieu pose sim voi anh that. Body tinh, khong joint. -->
+    <body name="view_cam_body" pos="0 0 0">
+      <camera name="view_cam" pos="0.35 -1.6314 0.8607" quat="0.843391 0.5373 0 0" fovy="62"/>
+    </body>
+  </worldbody>
+</mujoco>
