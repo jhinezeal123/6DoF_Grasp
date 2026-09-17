@@ -1,22 +1,31 @@
 """P2 - Do ma tran Jacobian command -> image cho servo anh.
 
-Ma tran J (2x2, pixel/met) tra loi: khi ra lenh dich TCP mot doan (dx, dy) met
-trong he base_link, thi tam ngon kep trong anh dich bao nhieu pixel.
+Ma tran J (2x3, pixel/met) tra loi: khi ra lenh dich TCP mot doan (dx, dy, dz)
+met trong he base_link, thi tam ngon kep trong anh dich bao nhieu pixel.
 
-    e_px = J @ [dx, dy]
+    e_px = J @ [dx, dy, dz]
+
+BA truc, khong phai hai. Lan do dau chi do (x, y) va cho ra ket qua vo dung:
+no doi 346 mm dich theo y cho mot sai so 104 px. Do rieng tung truc thi ro
+nguyen nhan - do nhay anh chenh nhau 5.3 lan:
+
+    truc x : 1.92 px/mm      truc z : 1.47 px/mm      truc y : 0.36 px/mm
+
+Camera nhin cheo tu truoc-trai, nen truc y (tien/ lui theo ban) gan nhu nam
+doc theo huong nhin va hau nhu khong dich anh. Ep ca sai so vao no la sai.
+Do ca ba truc roi dung gia nghich dao (pinv): no tu chon to hop hieu qua nhat.
 
 CALIBRATION PHAI CHIA CHO DELTA DA RA LENH, khong phai delta do duoc. J o day mo
 ta anh huong cua LENH, nen sai so bam theo cua tay duoc bu tru thay vi thoi
 phong J len ~65%. (Da tung ket luan sai cho nay o test 1.)
 
-Cach do: tai tu the dau P, hoi model ngon kep o dau -> g0. Ra lenh +2cm theo x,
-hoi lai -> g1, duoc cot 1. Ve P, ra lenh +2cm theo y, hoi lai -> g2, duoc cot 2.
-Ve P.
+Cach do: tai tu the dau P, hoi model ngon kep o dau -> g0. Lan luot ra lenh
++2cm x, +2cm y, -2cm z (moi lan ve P truoc), hoi lai -> g1, g2, g3. Ba cot cua J
+la (g_i - g0)/step. Ve P.
 
 Nhan dien ngon kep: HOI MODEL, khong do mau. Do that tren canh lam viec dem duoc
 11 vat do (ghe do, ao do, do tren ban, nguoi di lai) va khong vat nao trong so do
-la ngon kep - loc mau don thuan khong the phan biet. Model thi hieu "ngon kep cua
-canh tay robot" la gi. Moi lan hoi ~17 s cho anh moi; chap nhan duoc.
+la ngon kep - loc mau don thuan khong the phan biet. Moi lan hoi ~15 s.
 
 An toan: buoc 2cm la nho; huong giu nguyen (lay tu tcp_quat thuc te, khong doan);
 luon ve tu the dau trong finally.
@@ -140,24 +149,43 @@ def main() -> int:
         return 1
     print("  safety_state:", robot.safety_state, " is_armed:", robot.is_armed)
 
-    def wait_settled(timeout_s: float = 20.0) -> bool:
-        """Cho tay dung yen that su. Tra False neu het thoi gian.
+    def wait_settled(commanded=None, timeout_s: float = 25.0) -> bool:
+        """Cho tay dung yen THAT SU sau mot lenh. Tra False neu het thoi gian.
 
-        Do that: executor bao "succeeded" (KHONG phai "idle") roi tay dung im
-        hoan toan sau ~4s. Chi doi "idle" la doi mai mai - dung cai bay da lam
-        lan chay truoc quay vong 15s roi bao loi oan cho con tay.
+        Rat de viet sai ham nay, va da viet sai hai lan:
+
+        Lan 1 - chi cho trang thai "idle". Executor bao "succeeded" (khong phai
+        "idle"), nen quay vong vo ich 15 s roi bao loi oan cho con tay.
+
+        Lan 2 - cho trang thai khac "executing" roi doi TCP dung yen. Nhung ngay
+        sau khi ra lenh, trang thai VAN CON la "succeeded" cua lenh TRUOC (executor
+        chua kip chuyen sang "executing"), nen ham tra ve ngay lap tuc va phep do
+        duoc lay tren canh tay dang di chuyen. Do that: tai tu the goc z = 0.195
+        nhung diem goc do duoc z = 0.1822 - lech 12.8 mm, tay chua toi noi.
+
+        Lan nay chot ba tang: nghi toi thieu de executor nhan lenh, doi thoat khoi
+        executing/pending, roi doi dung yen 2 s lien tuc. Kem theo doi chieu TCP
+        voi dich da ra lenh de con nhin thay sai so bam.
         """
+        time.sleep(1.0)                       # de executor chuyen sang "executing"
         t_end = time.time() + timeout_s
         last, stable = None, 0
         while time.time() < t_end:
             time.sleep(0.25)
-            if bridge.motion_state[0] in ("executing", "pending", ""):
+            if bridge.motion_state[0] in ("executing", "pending"):
                 stable, last = 0, None
                 continue
+            if bridge.motion_state[0] == "" and time.time() - (t_end - timeout_s) < 2.0:
+                continue                       # chua nhan duoc lenh, cho them
             cur = np.array(robot.tcp_pos, dtype=float)
             if last is not None and np.linalg.norm(cur - last) < 5e-4:
                 stable += 1
-                if stable >= 4:          # dung yen ~1s
+                if stable >= 8:                # dung yen ~2 s
+                    if commanded is not None:
+                        residual = float(np.linalg.norm(cur - commanded)) * 1000
+                        if residual > 10.0:
+                            print("     (bam theo lech %.1f mm so voi dich da ra lenh)"
+                                  % residual)
                     return True
             else:
                 stable = 0
@@ -173,62 +201,67 @@ def main() -> int:
         print("LOI: khong mo duoc camera index", CAM_INDEX)
         return 1
 
-    def goto(offset_xy, tag: str):
+    # Ba truc va dau cua phep do. z di XUONG (-) de khong bao gio vuot tran;
+    # day la phep do ngan nhat va cung la huong servo se dung that.
+    AXES = (("x", np.array([1.0, 0.0, 0.0])),
+            ("y", np.array([0.0, 1.0, 0.0])),
+            ("z", np.array([0.0, 0.0, -1.0])))
+
+    def goto(offset_xyz, tag: str):
         """Ra lenh toi p0 + offset, cho dung han, hoi model ngon kep o dau.
 
         Tra ve (diem_anh, tcp_do_duoc, text_model).
         """
-        target = p0 + np.array([offset_xy[0], offset_xy[1], 0.0])
+        target = p0 + np.asarray(offset_xyz, dtype=float)
         if not args.dry_run:
             ok = robot.set_tcp_pose(target, q0)
             if not ok:
                 raise RuntimeError("set_tcp_pose tra False (lenh bi tu choi)")
-            if not wait_settled():
-                raise RuntimeError("tay khong dung yen sau 20s (tag=%s)" % tag)
+            if not wait_settled(commanded=target):
+                raise RuntimeError("tay khong dung yen sau 25s (tag=%s)" % tag)
         frame = capture_frame(cap, tag)
         tcp = np.array(robot.tcp_pos, dtype=float)
-        print("  [%s] hoi model (co the mat ~17s)..." % tag)
+        print("  [%s] hoi model (co the mat ~15s)..." % tag)
         t_start = time.time()
         point, text = model_point(frame, GRIPPER_Q)
         print("  [%s] model tra loi sau %.1fs: %s" % (tag, time.time() - t_start, text.strip()))
         return point, tcp, text
 
-    g0 = g1 = g2 = None
-    t0 = t1 = t2 = tb = None
+    points: dict[str, tuple[float, float]] = {}
+    moved: dict[str, np.ndarray] = {}
+    origin = None
     try:
         print("\n=== DIEM GOC ===")
-        g0, t0, _ = goto(np.zeros(2), "g0")
+        g0, t0, _ = goto(np.zeros(3), "g0")
         if g0 is None:
             raise RuntimeError("model khong chi duoc ngon kep o tu the goc")
+        origin, points["0"] = t0, g0
         print("  g0 = (%.1f, %.1f) px   tcp = %s" % (g0[0], g0[1], np.round(t0, 4)))
 
-        print("\n=== BUOC 1: +%.0f mm theo x ===" % (args.step * 1000))
-        g1, t1, _ = goto(np.array([args.step, 0.0]), "g1")
-        if g1 is None:
-            raise RuntimeError("model khong chi duoc ngon kep sau buoc x")
-        print("  g1 = (%.1f, %.1f) px   dich anh = (%.2f, %.2f) px"
-              % (g1[0], g1[1], g1[0] - g0[0], g1[1] - g0[1]))
-        print("  tcp = %s   dich TCP = %s m" % (np.round(t1, 4), np.round(t1 - t0, 4)))
+        for name, direction in AXES:
+            print("\n=== BUOC %s: %+.0f mm theo %s ==="
+                  % (name, direction[np.argmax(np.abs(direction))] * args.step * 1000, name))
+            point, tcp, _ = goto(direction * args.step, "g_" + name)
+            if point is None:
+                raise RuntimeError("model khong chi duoc ngon kep sau buoc %s" % name)
+            points[name], moved[name] = point, tcp - t0
+            delta_px = np.array(point) - np.array(g0)
+            print("  g_%s = (%.1f, %.1f) px   dich anh = (%.2f, %.2f) px   |d| = %.1f px"
+                  % (name, point[0], point[1], delta_px[0], delta_px[1],
+                     float(np.linalg.norm(delta_px))))
+            print("  dich TCP thuc = %s m" % np.round(tcp - t0, 4))
 
-        # Chot chan: TCP khong doi thi moi con so J deu la nhieu. Lan chay dau da
-        # cho ra J "dep" (cond=2.1) tu mot con tay dung im - phai chan tu day.
-        if not args.dry_run and np.linalg.norm(t1 - t0) < args.step * 0.2:
-            raise RuntimeError(
-                "tay KHONG di chuyen: lenh +%.0f mm nhung TCP chi doi %.2f mm. "
-                "Kiem tra is_armed / motion_state truoc khi tin vao J."
-                % (args.step * 1000, np.linalg.norm(t1 - t0) * 1000))
+            # Chot chan: TCP khong doi thi moi con so J deu la nhieu. Lan chay dau da
+            # cho ra J "dep" (cond=2.1) tu mot con tay dung im - phai chan tu day.
+            if not args.dry_run and np.linalg.norm(tcp - t0) < args.step * 0.2:
+                raise RuntimeError(
+                    "tay KHONG di chuyen o buoc %s: lenh %.0f mm nhung TCP chi doi %.2f mm. "
+                    "Kiem tra is_armed / motion_state truoc khi tin vao J."
+                    % (name, args.step * 1000, np.linalg.norm(tcp - t0) * 1000))
 
-        print("\n=== VE TU THE DAU ===")
-        _, tb, _ = goto(np.zeros(2), "gb")
-        print("  tcp = %s   lech TCP = %s m" % (np.round(tb, 4), np.round(tb - t0, 4)))
-
-        print("\n=== BUOC 2: +%.0f mm theo y ===" % (args.step * 1000))
-        g2, t2, _ = goto(np.array([0.0, args.step]), "g2")
-        if g2 is None:
-            raise RuntimeError("model khong chi duoc ngon kep sau buoc y")
-        print("  g2 = (%.1f, %.1f) px   dich anh = (%.2f, %.2f) px"
-              % (g2[0], g2[1], g2[0] - g0[0], g2[1] - g0[1]))
-        print("  tcp = %s   dich TCP = %s m" % (np.round(t2, 4), np.round(t2 - t0, 4)))
+            print("\n=== VE TU THE DAU ===")
+            _, tb, _ = goto(np.zeros(3), "gb_" + name)
+            print("  lech TCP so voi goc = %s m" % np.round(tb - t0, 4))
 
     finally:
         print("\n=== VE TU THE DAU (finally) ===")
@@ -240,28 +273,33 @@ def main() -> int:
                   % (np.round(back, 4), np.linalg.norm(back - p0) * 1000))
         cap.release()
 
-    if g0 is None or g1 is None or g2 is None:
-        print("\nLOI: thieu diem (g0/g1/g2). Khong tinh duoc J.")
+    missing = [n for n, _ in AXES if n not in points]
+    if "0" not in points or missing:
+        print("\nLOI: thieu diem do cho truc %s. Khong tinh duoc J." % (missing or "goc"))
         return 1
 
-    d1 = np.array(g1) - np.array(g0)
-    d2 = np.array(g2) - np.array(g0)
-    J = np.column_stack([d1 / args.step, d2 / args.step])
+    columns = [(np.array(points[name]) - np.array(points["0"])) / args.step
+               for name, _ in AXES]
+    J = np.column_stack(columns)
 
-    print("\n" + "=" * 62)
-    print("MA TRAN J (pixel/met)   [cot 1 = x, cot 2 = y]")
-    print("  [[%9.1f  %9.1f]" % (J[0, 0], J[0, 1]))
-    print("  " + " " * 9 + "%9.1f  %9.1f]]" % (J[1, 0], J[1, 1]))
+    print("\n" + "=" * 66)
+    print("MA TRAN J (pixel/met)   [cot x, y, z]")
+    for row in range(2):
+        print("  [%s]" % "  ".join("%9.1f" % J[row, c] for c in range(J.shape[1])))
 
-    det = float(np.linalg.det(J))
+    # Do nhay tung truc: day moi la con so quyet dinh servo dung duoc hay khong.
+    # Lan do dau chi co (x, y) va truc y yeu gap 5.3 lan truc x, khien servo doi
+    # 346 mm cho mot sai so 104 px. Nhin bang nay la thay ngay.
+    print("\n  Do nhay tung truc:")
+    for c, (name, _) in enumerate(AXES):
+        px_per_mm = float(np.linalg.norm(J[:, c])) / 1000.0
+        print("    %s : %5.2f px/mm   (1 px sai <=> %.2f mm)" % (name, px_per_mm, 1.0 / max(px_per_mm, 1e-9)))
+
     cond = float(np.linalg.cond(J))
-    print("\n  det(J)      = %.3g" % det)
-    print("  cond(J)     = %.1f   %s" % (cond, "OK" if cond < 20 else "XAU - J gan suy bien"))
+    print("\n  cond(J) = %.1f   %s" % (cond, "OK" if cond < 20 else "CAO - J gan suy bien"))
 
-    # Buoc tay 1mm dich bao nhieu pixel: con so quyet dinh do chinh xac servo.
-    px_per_mm = float(np.linalg.norm(J[:, 0])) / 1000.0
-    print("  1 mm theo x -> %.2f px" % px_per_mm)
-    print("  => sai so dinh vi 1 px tuong duong %.2f mm" % (1.0 / max(px_per_mm, 1e-9)))
+    weakest = min(range(len(AXES)), key=lambda c: np.linalg.norm(J[:, c]))
+    print("  truc yeu nhat: %s (%.2f px/mm)" % (AXES[weakest][0], np.linalg.norm(J[:, weakest]) / 1000.0))
 
     if args.dry_run:
         print("\n(DRY RUN - khong ghi file)")
@@ -270,15 +308,12 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({
         "J": J.tolist(),
+        "axes": [name for name, _ in AXES],
         "step_m": args.step,
         "p0": p0.tolist(),
         "q0": q0.tolist(),
-        "g0": list(g0),
-        "g1": list(g1),
-        "g2": list(g2),
-        "tcp_moved_x_m": (t1 - t0).tolist(),
-        "tcp_moved_y_m": (t2 - t0).tolist(),
-        "det": det,
+        "points_px": {k: list(v) for k, v in points.items()},
+        "tcp_moved_m": {k: v.tolist() for k, v in moved.items()},
         "cond": cond,
         "offsets_deg": list(np.round(ros_bridge.OFFSETS_DEG, 4)),
         "detector": {"kind": "physbrain_point_2d", "server": _CLIENT.url,
