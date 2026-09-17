@@ -55,6 +55,8 @@ class FakeRobot(Robot):
                           for n in self.JOINT_NAMES]
         self.flange_body_id = mujoco.mj_name2id(
             self.m, mujoco.mjtObj.mjOBJ_BODY, "flange_link")
+        self.tool0_site_id = mujoco.mj_name2id(
+            self.m, mujoco.mjtObj.mjOBJ_SITE, "tool0_preview")
         self.synced_pose: Optional[np.ndarray] = None
 
     # ------------------------------------------------------------------ TCP preview
@@ -197,6 +199,8 @@ class FakeRobot(Robot):
                 self.d.qpos[:] = original_qpos
                 mujoco.mj_forward(self.m, self.d)
                 self.synced_pose = original_synced_pose
+            elif self.tool0_site_id >= 0:
+                self.m.site_rgba[self.tool0_site_id, 3] = 0.95
 
             return {
                 "ok": bool(converged),
@@ -230,6 +234,7 @@ class FakeRobot(Robot):
         if measured is None:
             return False
         self._write(model_rad(measured))
+        self._hide_tool0_preview()
         return True
 
     def set_display(self, q_rad) -> None:
@@ -243,6 +248,11 @@ class FakeRobot(Robot):
         Ben goi phai giu _mj_lock (MuJoCo khong thread-safe).
         """
         self._write(np.asarray(q_rad, dtype=np.float64).flatten()[:6])
+        self._hide_tool0_preview()
+
+    def _hide_tool0_preview(self) -> None:
+        if self.tool0_site_id >= 0:
+            self.m.site_rgba[self.tool0_site_id, 3] = 0.0
 
     def _write(self, q_rad) -> None:
         for i, addr in enumerate(self.qpos_addrs):
@@ -264,6 +274,7 @@ class FakeRobot(Robot):
         khong lam vo loi goi cu; do mo that do /myarm/gripper/state quyet dinh.
         """
         mujoco.mj_resetData(self.m, self.d)
+        self._hide_tool0_preview()
         if initial_qpos is not None:
             self._write(np.asarray(initial_qpos, dtype=np.float64).flatten()[:6])
         else:
