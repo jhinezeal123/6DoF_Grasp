@@ -1680,6 +1680,12 @@ class WebControlApp:
     }}
 
     function setMode(mode) {{
+      // A mode switch establishes a new pose source. Do not keep a coordinate
+      // target from the previous mode while the server syncs the ghost.
+      if (mode !== currentMode) {{
+        pendingEE = null;
+        isDragging = false;
+      }}
       post("/api/set_mode", {{mode: mode}}).then(data => {{
         if (data && data.mode) updateModeUI(data.mode);
         fetchStatus();
@@ -1819,11 +1825,11 @@ class WebControlApp:
       const input = document.getElementById("ee_" + name);
       if (!input || !Number.isFinite(Number(value))) return;
       input.value = Number(value);
-      onEESliderInput(name, input.value);
+      onEESliderInput(name, input.value, false);
     }}
 
-    function onEESliderInput(name, value) {{
-      isDragging = true;
+    function onEESliderInput(name, value, userInput = true) {{
+      if (userInput) isDragging = true;
       const numeric = Number(value);
       const label = document.getElementById("val_ee_" + name);
       if (label && Number.isFinite(numeric)) label.innerText = numeric.toFixed(3);
@@ -1896,7 +1902,13 @@ class WebControlApp:
       fetch("/api/status")
         .then(r => r.json())
         .then(data => {{
-          if (data.ui_mode) updateModeUI(data.ui_mode);
+          if (data.ui_mode) {{
+            if (data.ui_mode !== currentMode) {{
+              pendingEE = null;
+              isDragging = false;
+            }}
+            updateModeUI(data.ui_mode);
+          }}
           if (data.control_tab && data.control_tab !== currentControlTab) {{
             // Sync the server session without posting again on every poll.
             renderControlTab(data.control_tab);
