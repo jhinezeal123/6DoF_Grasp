@@ -143,6 +143,12 @@ class Robot:
         return np.full(3, np.nan) if p is None else p
 
     @property
+    def tcp_quat(self) -> np.ndarray:
+        """Huong TCP theo quaternion ROS [qx, qy, qz, qw]."""
+        q = self._b.tcp_quat
+        return np.full(4, np.nan) if q is None else q
+
+    @property
     def gripper(self) -> float:
         """Do mo TONG giua hai dau ngon tay (met, 0..0.08)."""
         value = self._b.opening_m
@@ -174,6 +180,7 @@ class Robot:
             "gripper": self.gripper,
             "gripper_pct": self.gripper_pct,
             "tcp_pos": self.tcp_pos,
+            "tcp_quat": self.tcp_quat,
             "temperatures": self.temperatures(),
             "joint_names": list(self.JOINT_NAMES),
             "rad_max": self.rad_max,

@@ -26,6 +26,7 @@ from program.camera.camera import Camera
 from program.camera.usb_camera import USB_CAMERAS, USBCamera
 from script.compressor import ImageCompressor
 from user.fake_robot.fake_robot import FakeRobot
+from user.teleop import render_html as render_teleop_page
 
 # Duong dan stream -> khoa trong cache JPEG (xem get_stream_jpeg).
 # Anh xa TUONG MINH thay vi suy ra tu danh tinh doi tuong camera: ban cu lam vay
@@ -111,6 +112,17 @@ class WebControlHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(html)
 
+        elif p in ("/teleop", "/teleop.html"):
+            sid = self._sid_or_new()
+            ctx.touch_session(sid)
+            html = ctx.render_teleop_html()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html)))
+            self._flush_sid_cookie()
+            self.end_headers()
+            self.wfile.write(html)
+
         elif p == "/api/whoami":
             sid = self._sid_or_new()
             name = ctx.get_session_name(sid)
@@ -164,9 +176,36 @@ class WebControlHandler(BaseHTTPRequestHandler):
             # Pose TCP dang preview tren robot ao (neu co). Doc truoc _mj_lock de
             # giu thu tu khoa duy nhat: _lock -> _mj_lock.
             with ctx._lock:
-                serialized["ee_preview"] = (
-                    dict(ctx._ee_preview) if ctx._ee_preview is not None else None
-                )
+                ee_preview = (dict(ctx._ee_preview)
+                              if ctx._ee_preview is not None else None)
+                serialized["ee_preview"] = ee_preview
+                serialized["control_tab"] = ctx.get_control_tab(sid)
+            # The coordinate tab needs a pose to initialize/track its sliders.
+            # In Simulate use the ghost FK; while coordinate preview is active,
+            # use the requested target so polling cannot snap sliders backward.
+            if ee_preview is not None:
+                ee_position = ee_preview.get("position")
+                ee_quaternion = ee_preview.get("quaternion")
+            elif serialized["ui_mode"] == ctx.MODE_SIMULATE:
+                with ctx._mj_lock:
+                    _p, _q = ctx.fake_robot.tcp_pose()
+                ee_position = _p.tolist()
+                ee_quaternion = _q.tolist()
+            else:
+                ee_position = dist.get("tcp_pos")
+                ee_quaternion = dist.get("tcp_quat")
+                if ee_position is not None and not np.all(np.isfinite(ee_position)):
+                    ee_position = None
+                elif isinstance(ee_position, np.ndarray):
+                    ee_position = ee_position.tolist()
+                if ee_quaternion is not None and not np.all(np.isfinite(ee_quaternion)):
+                    ee_quaternion = None
+                elif isinstance(ee_quaternion, np.ndarray):
+                    ee_quaternion = ee_quaternion.tolist()
+            serialized["ee_control_pose"] = {
+                "position": ee_position,
+                "quaternion": ee_quaternion,
+            }
             real_q = ctx.real_robot.qpos_cached
             serialized["real_qpos"] = real_q.tolist()
             serialized["real_deg"] = np.degrees(real_q).tolist()
@@ -203,6 +242,11 @@ class WebControlHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(resp)))
             self.end_headers()
             self.wfile.write(resp)
+
+        elif p == "/api/teleop/status":
+            sid = self._sid_or_new()
+            ctx.touch_session(sid)
+            self._send_json(ctx.teleop_status(sid))
 
         elif p in STREAM_KEYS:
             key = STREAM_KEYS[p]
@@ -259,6 +303,28 @@ class WebControlHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok" if result.get("ok") else "error",
                              **result})
 
+        elif p == "/api/set_ee_absolute":
+            # Giong slider khop: control -> robot that, simulate -> ghost IK.
+            result = ctx.set_ee_absolute(body, sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
+
+        elif p == "/api/teleop/step":
+            result = ctx.teleop_step(body, sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
+
+        elif p == "/api/teleop/reset":
+            result = ctx.reset_teleop(sid)
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
+
+        elif p == "/api/set_control_tab":
+            tab = body.get("tab", "joint")
+            ok = ctx.set_control_tab(sid, tab)
+            self._send_json({"status": "ok" if ok else "error",
+                             "tab": ctx.get_control_tab(sid)})
+
         elif p == "/api/set_mode":
             # Chuyen doi mode: 'control', 'simulate' hoac 'offset' (chi doi cho tab nay)
             new_mode = body.get("mode", "control")
@@ -301,8 +367,9 @@ class WebControlHandler(BaseHTTPRequestHandler):
 
         elif p == "/api/apply_to_real":
             # Option trong simulate: 'Dua robot that ve pose nay' -> goi FollowTrajectory
-            success = ctx.apply_fake_pose_to_real(sid)
-            self._send_json({"status": "ok" if success else "error", "message": "Da dua robot that ve pose mo phong!"})
+            result = ctx.apply_fake_pose_to_real(sid, body.get("control_tab"))
+            self._send_json({"status": "ok" if result.get("ok") else "error",
+                             **result})
 
         elif p == "/api/preset":
             # Ap dung cac pose preset mac dinh
@@ -394,6 +461,14 @@ class WebControlApp:
     MODE_SIMULATE = "simulate"    # Dieu khien thu nghiem tren robot ao
     MODE_OFFSET = "offset"        # Hieu chuan offset: slider CHI can robot ao
 
+    # Teleop intentionally keeps orientation fixed while the keyboard only
+    # changes XYZ.  With the SDK tool0 transform this makes the gripper point
+    # vertically down in base_link.
+    TELEOP_DEFAULT_QUAT = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    TELEOP_MIN_POSITION = np.array([-0.10, -0.60, 0.00], dtype=np.float64)
+    TELEOP_MAX_POSITION = np.array([0.70, 0.60, 0.70], dtype=np.float64)
+    TELEOP_MAX_DELTA_M = 0.05
+
     def __init__(self, real_robot: Robot, fake_robot: FakeRobot,
                  cam_sim: Optional[Camera] = None,
                  cam_real: Optional[Camera] = None,
@@ -431,6 +506,10 @@ class WebControlApp:
         # Truoc day ui_mode la thuoc tinh cua app -> tab A bam Simulate thi tab B
         # cung nhay theo, rat nguy hiem vi B tuong dang xem robot that.
         self._sessions = {}           # sid -> {"mode": str, "last": float, "name": str}
+        self._control_tabs = {}       # sid -> "joint" | "coordinate"
+        # Per-session absolute TCP target used by keyboard teleop.  Deltas are
+        # accumulated here because TCP feedback arrives slower than key repeats.
+        self._teleop_targets = {}     # sid -> {"position": [x, y, z]}
 
         # Luu tru pose truoc khi vao mode simulate
         self._saved_real_pose = None
@@ -498,6 +577,23 @@ class WebControlApp:
             self._sessions[sid]["name"] = (name or "").strip()[:32] or self._default_name(sid)
             return self._sessions[sid]["name"]
 
+    def get_control_tab(self, sid: str) -> str:
+        with self._lock:
+            return self._control_tabs.get(sid, "joint")
+
+    def set_control_tab(self, sid: str, tab: str) -> bool:
+        tab_clean = (tab or "").lower().strip()
+        if tab_clean not in ("joint", "coordinate"):
+            return False
+        with self._lock:
+            self._control_tabs[sid] = tab_clean
+            # The ghost pose is shared. Leaving coordinate preview active while
+            # switching back to joint sliders would make the renderer overwrite
+            # the joint preview, so clear it at the tab boundary.
+            if tab_clean == "joint":
+                self._ee_preview = None
+            return True
+
     def touch_session(self, sid: str):
         """Ghi nhan tab nay con hoat dong (de don phien cu)."""
         if not sid:
@@ -512,6 +608,8 @@ class WebControlApp:
                 for k, _ in old:
                     if k != sid:
                         self._sessions.pop(k, None)
+                        self._control_tabs.pop(k, None)
+                        self._teleop_targets.pop(k, None)
 
     def get_stream_jpeg(self, key: str) -> Optional[bytes]:
         """Lay JPEG moi nhat tu cache (thread-safe). None neu chua render xong."""
@@ -527,6 +625,92 @@ class WebControlApp:
             return True
         return {"sim": self.cam_sim, "third": self.cam_third,
                 "real": self.cam_real}.get(key) is not None
+
+    def render_teleop_html(self) -> bytes:
+        """Render the standalone keyboard teleoperation page."""
+        return render_teleop_page(USB_CAMERAS)
+
+    @staticmethod
+    def _finite_position(value):
+        try:
+            position = np.asarray(value, dtype=np.float64).reshape(3)
+        except (TypeError, ValueError):
+            return None
+        return position if np.all(np.isfinite(position)) else None
+
+    def teleop_status(self, sid: str = ""):
+        """Return teleop target, measured TCP pose and safety state."""
+        with self._lock:
+            actual = self._finite_position(self.real_robot.tcp_pos)
+            entry = self._teleop_targets.get(sid)
+            if entry is not None:
+                target = self._finite_position(entry.get("position"))
+            else:
+                target = actual.copy() if actual is not None else None
+            return {
+                "ok": target is not None,
+                "position": None if target is None else target.tolist(),
+                "quaternion": self.TELEOP_DEFAULT_QUAT.tolist(),
+                "actual_position": None if actual is None else actual.tolist(),
+                "safety_state": self.real_robot.safety_state,
+                "is_armed": bool(self.real_robot.is_armed),
+                "is_real_connected": bool(self.real_robot.is_real_connected),
+            }
+
+    def reset_teleop(self, sid: str = ""):
+        """Forget the accumulated target; the next step starts at feedback TCP."""
+        with self._lock:
+            self._teleop_targets.pop(sid, None)
+            status = self.teleop_status(sid)
+            status["message"] = "Da reset target teleop theo pose robot"
+            return status
+
+    def teleop_step(self, body, sid: str = ""):
+        """Apply one keyboard Cartesian delta with fixed downward orientation."""
+        if not isinstance(body, dict):
+            return {"ok": False, "message": "body teleop phai la JSON object"}
+        try:
+            delta = np.asarray([body.get("dx"), body.get("dy"), body.get("dz")],
+                               dtype=np.float64)
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "dx/dy/dz phai la so"}
+        if delta.shape != (3,) or not np.all(np.isfinite(delta)):
+            return {"ok": False, "message": "dx/dy/dz phai huu han"}
+        if np.any(np.abs(delta) > self.TELEOP_MAX_DELTA_M):
+            return {"ok": False,
+                    "message": "Moi buoc teleop khong duoc vuot qua 50 mm"}
+        if not np.any(np.abs(delta) > 1e-12):
+            return {"ok": False, "message": "Buoc teleop phai khac 0"}
+
+        with self._lock:
+            entry = self._teleop_targets.get(sid)
+            if entry is None:
+                base = self._finite_position(self.real_robot.tcp_pos)
+                if base is None:
+                    return {"ok": False,
+                            "message": "Chua co TCP feedback moi de bat dau teleop"}
+            else:
+                base = self._finite_position(entry.get("position"))
+                if base is None:
+                    self._teleop_targets.pop(sid, None)
+                    return {"ok": False,
+                            "message": "Target teleop khong hop le; hay reset lai"}
+
+            target = base + delta
+            if np.any(target < self.TELEOP_MIN_POSITION) or np.any(target > self.TELEOP_MAX_POSITION):
+                return {
+                    "ok": False,
+                    "message": "Target vuot mien an toan XYZ cua teleop",
+                    "position": base.tolist(),
+                }
+
+            result = self._move_ee_pose_locked(target, self.TELEOP_DEFAULT_QUAT.copy())
+            if result.get("ok"):
+                self._teleop_targets[sid] = {"position": target.tolist()}
+                result["delta"] = delta.tolist()
+                result["position"] = target.tolist()
+                result["quaternion"] = self.TELEOP_DEFAULT_QUAT.tolist()
+            return result
 
     def _start_render_thread(self):
         """
@@ -666,30 +850,50 @@ class WebControlApp:
                 "quaternion": quaternion.tolist(),
             }
 
+    def set_ee_absolute(self, body, sid: str = ""):
+        """Apply a coordinate slider target according to the active UI mode."""
+        mode = self.get_session_mode(sid)
+        if mode == self.MODE_SIMULATE:
+            return self.preview_ee_pose(body, sid)
+        if mode == self.MODE_CONTROL:
+            return self.move_ee(body, sid)
+        return {"ok": False,
+                "message": "Che do OFFSET chi ho tro dieu khien khop"}
+
+    def _move_ee_pose_locked(self, position, quaternion):
+        """Publish a validated pose; caller must hold ``self._lock``."""
+        if not self.real_robot.is_armed:
+            return {"ok": False,
+                    "message": "Robot chua armed; bam KHÔI PHỤC truoc khi Submit"}
+        if not self.real_robot.is_real_connected:
+            return {"ok": False,
+                    "message": "Robot khong co feedback moi; kiem tra nguon va cap USB"}
+        if self._traj_thread is not None and self._traj_thread.is_alive():
+            return {"ok": False, "message": "Robot dang chay quy dao khac"}
+        try:
+            ok = bool(self.real_robot.set_tcp_pose(position, quaternion))
+        except Exception as exc:
+            return {"ok": False, "message": f"set_tcp_pose loi: {exc}"}
+        if ok:
+            # Return the display to the measured robot after submit. The
+            # third-person stream will then follow the real feedback again.
+            self._ee_preview = None
+        return {
+            "ok": ok,
+            "position": position.tolist(),
+            "quaternion": quaternion.tolist(),
+            "message": "Da gui set_tcp_pose" if ok else "Robot tu choi set_tcp_pose",
+        }
+
     def move_ee(self, body, sid: str = ""):
         """Publish a validated absolute TCP pose to the real robot."""
-        del sid
         try:
             position, quaternion = self._parse_ee_pose(body)
         except ValueError as exc:
             return {"ok": False, "message": str(exc)}
         with self._lock:
-            if self._traj_thread is not None and self._traj_thread.is_alive():
-                return {"ok": False, "message": "Robot dang chay quy dao khac"}
-            try:
-                ok = bool(self.real_robot.set_tcp_pose(position, quaternion))
-            except Exception as exc:
-                return {"ok": False, "message": f"set_tcp_pose loi: {exc}"}
-            if ok:
-                # Return the display to the measured robot after submit. The
-                # third-person stream will then follow the real feedback again.
-                self._ee_preview = None
-            return {
-                "ok": ok,
-                "position": position.tolist(),
-                "quaternion": quaternion.tolist(),
-                "message": "Da gui set_tcp_pose" if ok else "Robot tu choi set_tcp_pose",
-            }
+            self._teleop_targets.pop(sid, None)
+            return self._move_ee_pose_locked(position, quaternion)
 
     def stop(self) -> bool:
         """Dung khan cap robot that (dung ngay, khong chay not quy dao)."""
@@ -769,6 +973,7 @@ class WebControlApp:
         with self._lock:
             mode_clean = mode.lower().strip()
             self._ee_preview = None
+            self._teleop_targets.pop(sid, None)
             if mode_clean == self.MODE_SIMULATE:
                 self.set_session_mode(sid, self.MODE_SIMULATE)
                 with self._mj_lock:
@@ -800,6 +1005,7 @@ class WebControlApp:
         """
         with self._lock:
             self._ee_preview = None
+            self._teleop_targets.pop(sid, None)
             target = self.active_control_object(sid)
             if isinstance(param, str) and param.lower() in ("gripper", "grip"):
                 # % -> met, dung MAX_GRIPPER_M cua Robot (mot nguon su that).
@@ -813,6 +1019,7 @@ class WebControlApp:
         """Tinh toan delta va goi ham change() de dat gia tri tuyet doi."""
         with self._lock:
             self._ee_preview = None
+            self._teleop_targets.pop(sid, None)
             # Hai che do nay slider chi duoc ghi vao HINH VE MuJoCo:
             #   OFFSET   - can robot ao cho khop thuc te roi ghi lai offset
             #   SIMULATE - dung pose ao, roi bam "dua robot that ve pose nay"
@@ -868,33 +1075,51 @@ class WebControlApp:
                 with self._mj_lock:
                     return target.set_joint(j_idx, target_val)
 
-    def apply_fake_pose_to_real(self, sid: str = "") -> bool:
-        """
-        Khi dang o mode simulate: option 'Dua robot that ve pose nay'.
-        Su dung ham FollowTrajectory cua object robot that!
+    def apply_fake_pose_to_real(self, sid: str = "", control_tab: str = None):
+        """Apply the pose currently shown in Simulate to the real robot.
+
+        The joint tab keeps its existing FollowTrajectory path.  The coordinate
+        tab applies the stored TCP target through set_tcp_pose(), so the top
+        ``Dua robot that ve pose nay`` button is the single submit action for
+        both control styles.
         """
         with self._lock:
             if self.get_session_mode(sid) != self.MODE_SIMULATE:
-                return False
+                return {"ok": False, "message": "Chi Submit duoc trong che do SIMULATE"}
+            tab = (control_tab or self.get_control_tab(sid)).lower().strip()
+
+            if tab == "coordinate":
+                if self._ee_preview is None:
+                    # Selecting the coordinate tab and pressing Submit without
+                    # touching a slider should still apply the pose currently
+                    # shown by the ghost model.
+                    with self._mj_lock:
+                        position, quaternion = self.fake_robot.tcp_pose()
+                    position = np.asarray(position, dtype=np.float64)
+                    quaternion = np.asarray(quaternion, dtype=np.float64)
+                else:
+                    position = np.asarray(self._ee_preview["position"], dtype=np.float64)
+                    quaternion = np.asarray(self._ee_preview["quaternion"], dtype=np.float64)
+                result = self._move_ee_pose_locked(position, quaternion)
+                if result.get("ok"):
+                    result["message"] = "Da gui set_tcp_pose tu pose EE mo phong"
+                return result
+
+            if tab != "joint":
+                return {"ok": False, "message": "Tab dieu khien khong hop le"}
             self._ee_preview = None
             # Chan bam trung: FollowTrajectory chay o thread rieng va mat vai giay.
             # Bam 3 lan nhanh -> 3 thread cung dieu khien 1 tay -> lenh tron lan
             # (da do duoc: 3 thread cung chay). Doi xong moi cho bam tiep.
             if self._traj_thread is not None and self._traj_thread.is_alive():
                 print("[WebControl] Dang di chuyen robot that, bo qua lenh trung.")
-                return False
+                return {"ok": False, "message": "Robot dang di chuyen"}
             with self._mj_lock:
                 # mj_qpos la pose MuJoCo DANG VE, tuc "sim" = real - offset.
                 target_sim = self.fake_robot.mj_qpos[:6].copy()
                 target_grip = self.fake_robot.gripper
             # Muon tay that ve dung cho dang NHIN THAY thi phai cong offset tra lai
             # (raw_deg chinh la chieu nguoc cua model_rad ma sync() dung).
-            #
-            # Doc nham distribution["qpos"] - thu FakeRobot thua huong tu Robot, tuc
-            # la feedback ROS chu khong phai hinh ve - thi lenh gui di dung bang pose
-            # hien tai cua tay: khong doi gi ca, nut bam vo tac dung.
-            # Thieu buoc cong offset thi tay dung sai cho dung bang offsets_deg
-            # (do duoc: lech toi 30,5 do o khop 4).
             target_qpos = np.radians(ros_bridge.raw_deg(target_sim))
             print(f"[WebControl] Thuc thi FollowTrajectory dua robot that ve pose mo phong: {np.degrees(target_qpos)}")
 
@@ -916,7 +1141,7 @@ class WebControlApp:
             th = threading.Thread(target=_async_exec, name="FollowTrajectory-Worker", daemon=True)
             th.start()
             self._traj_thread = th
-            return True
+            return {"ok": True, "message": "Da bat dau dua robot that ve pose mo phong"}
 
     def apply_preset(self, name: str, sid: str = "") -> bool:
         """Dat pose preset."""
@@ -934,6 +1159,8 @@ class WebControlApp:
         if name not in presets:
             return False
         q_rad, grip = presets[name]
+        with self._lock:
+            self._teleop_targets.pop(sid, None)
         target = self.active_control_object(sid)
         # Gui CA 6 khop trong MOT lenh (set_pose), cho ca robot that lan fake.
         # Voi 6 lan set_joint noi tiep, moi lan dong bo lai tu encoder nen khop sau
@@ -948,6 +1175,7 @@ class WebControlApp:
         """Reset scene mo phong MuJoCo ve trang thai mac dinh."""
         with self._lock:
             self._ee_preview = None
+            self._teleop_targets.clear()
             if hasattr(self.fake_robot, "reset_scene"):
                 with self._mj_lock:
                     return self.fake_robot.reset_scene()
@@ -1186,12 +1414,34 @@ class WebControlApp:
       background: #30363d;
       color: #58a6ff;
     }}
-    .ee-card {{
-      grid-column: 1 / -1;
-      background: #161b22;
+    .control-tabs {{
+      display: flex;
+      gap: 6px;
+      margin: -2px -2px 14px;
+      border-bottom: 1px solid #30363d;
+    }}
+    .control-tab {{
+      flex: 1;
+      padding: 9px 10px;
+      color: #8b949e;
+      background: #21262d;
       border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 14px;
+      border-bottom: 0;
+      border-radius: 5px 5px 0 0;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }}
+    .control-tab.active {{
+      color: #fff;
+      background: #1f6feb;
+      border-color: #388bfd;
+    }}
+    .control-panel {{
+      display: none;
+    }}
+    .control-panel.active {{
+      display: block;
     }}
     .ee-card h3 {{
       font-size: 0.95rem;
@@ -1204,10 +1454,30 @@ class WebControlApp:
       line-height: 1.4;
       margin-bottom: 10px;
     }}
-    .ee-grid {{
-      display: grid;
-      grid-template-columns: repeat(7, minmax(90px, 1fr));
-      gap: 8px;
+    .ee-slider-group {{
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #21262d;
+    }}
+    .ee-slider-header {{
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: #c9d1d9;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }}
+    .ee-slider-header .val {{
+      color: #58a6ff;
+      font-family: monospace;
+    }}
+    .ee-slider-controls {{
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }}
+    .ee-slider-controls input[type=range] {{
+      flex: 1;
     }}
     .ee-field {{
       display: flex;
@@ -1216,43 +1486,7 @@ class WebControlApp:
       color: #8b949e;
       font-size: 0.72rem;
     }}
-    .ee-field input {{
-      width: 100%;
-      padding: 7px 8px;
-      color: #c9d1d9;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      font-family: monospace;
-    }}
-    .ee-actions {{
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }}
-    .ee-actions button {{
-      flex: 1;
-      padding: 8px 12px;
-      color: #c9d1d9;
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 5px;
-      font-weight: 600;
-      cursor: pointer;
-    }}
-    .ee-actions button:hover {{
-      background: #30363d;
-      border-color: #58a6ff;
-    }}
-    .ee-actions .ee-submit {{
-      color: #fff;
-      background: #238636;
-      border-color: #2ea043;
-    }}
-    .ee-actions .ee-submit:hover {{
-      background: #2ea043;
-    }}
-    #eePreviewInfo {{
+    .ee-info {{
       min-height: 18px;
       margin-top: 9px;
       color: #8b949e;
@@ -1262,7 +1496,6 @@ class WebControlApp:
     @media (max-width: 900px) {{
       .main-grid {{ grid-template-columns: 1fr; }}
       .stream-container {{ width: 100%; height: auto; aspect-ratio: 4 / 3; }}
-      .ee-grid {{ grid-template-columns: repeat(4, minmax(90px, 1fr)); }}
     }}
   </style>
 </head>
@@ -1272,6 +1505,8 @@ class WebControlApp:
       <h1>myArm M750 - Hệ Thống Điều Khiển Robot VLA</h1>
       <p>Cấu trúc framework tích hợp Real Robot, Ghost Simulator & Camera</p>
     </div>
+    <a href="/teleop" style="color:#c9d1d9; border:1px solid #30363d; border-radius:6px;
+       padding:8px 12px; text-decoration:none; font-size:0.8rem; white-space:nowrap;">TELEOP</a>
     <div class="mode-bar">
       <span id="badgeStatus" class="badge badge-real">MODE: CONTROL</span>
       <button id="btnControl" class="btn btn-mode active-control" onclick="setMode('control')">CONTROL (Robot Thật)</button>
@@ -1312,61 +1547,121 @@ class WebControlApp:
            background: #3d1418; border: 1px solid #f85149; color: #ff7b72; font-size: 0.75rem;"></div>
     </div>
 
-    <!-- Sliders & Control Card -->
+    <!-- Joint and coordinate controllers share one tabbed control card. -->
     <div class="control-card">
-      <h3 style="font-size: 0.95rem; margin-bottom: 12px; color: #f0f6fc;">Bảng Điều Khiển Khớp (change() API)</h3>
+      <div class="control-tabs">
+        <button id="tabJoint" class="control-tab active" onclick="setControlTab('joint')">
+          Bảng Điều Khiển Khớp (change() API)
+        </button>
+        <button id="tabCoordinate" class="control-tab" onclick="setControlTab('coordinate')">
+          Move EE with Coord
+        </button>
+      </div>
 
-      <div id="slidersContainer"></div>
+      <div id="jointPanel" class="control-panel active">
+        <h3 style="font-size: 0.95rem; margin-bottom: 12px; color: #f0f6fc;">Điều Khiển Khớp</h3>
+        <div id="slidersContainer"></div>
 
-      <!-- Gripper Slider -->
-      <div class="slider-group">
-        <div class="slider-header">
-          <span>Tay kẹp (Gripper)</span>
-          <span class="val" id="val_grip">0.0%</span>
+        <!-- Gripper Slider -->
+        <div class="slider-group">
+          <div class="slider-header">
+            <span>Tay kẹp (Gripper)</span>
+            <span class="val" id="val_grip">0.0%</span>
+          </div>
+          <div class="slider-controls">
+            <button class="btn-step" onclick="stepChange('gripper', -5.0)">-</button>
+            <input type="range" id="slider_grip" min="0" max="100" step="1" value="0"
+                   oninput="onSliderDrag('gripper', this.value)" onchange="onSliderCommit('gripper', this.value)">
+            <button class="btn-step" onclick="stepChange('gripper', 5.0)">+</button>
+          </div>
         </div>
-        <div class="slider-controls">
-          <button class="btn-step" onclick="stepChange('gripper', -5.0)">-</button>
-          <input type="range" id="slider_grip" min="0" max="100" step="1" value="0"
-                 oninput="onSliderDrag('gripper', this.value)" onchange="onSliderCommit('gripper', this.value)">
-          <button class="btn-step" onclick="stepChange('gripper', 5.0)">+</button>
+
+        <!-- Preset Actions -->
+        <div class="preset-bar">
+          <button onclick="applyPreset('home')">Home Pose</button>
+          <button onclick="applyPreset('pre_grasp')">Pre-Grasp</button>
+          <button onclick="applyPreset('rest')">Rest Pose</button>
+          <button onclick="applyPreset('photo')">📷 Pose ảnh</button>
+          <button onclick="stepChange('gripper', 100)">Mở Kẹp</button>
+          <button onclick="stepChange('gripper', -100)">Đóng Kẹp</button>
+          <button onclick="resetScene()" style="color: #ff7b72; border-color: #f85149;">🔄 Reset Scene</button>
         </div>
       </div>
 
-      <!-- Preset Actions -->
-      <div class="preset-bar">
-        <button onclick="applyPreset('home')">Home Pose</button>
-        <button onclick="applyPreset('pre_grasp')">Pre-Grasp</button>
-        <button onclick="applyPreset('rest')">Rest Pose</button>
-        <button onclick="applyPreset('photo')">📷 Pose ảnh</button>
-        <button onclick="stepChange('gripper', 100)">Mở Kẹp</button>
-        <button onclick="stepChange('gripper', -100)">Đóng Kẹp</button>
-        <button onclick="resetScene()" style="color: #ff7b72; border-color: #f85149;">🔄 Reset Scene</button>
+      <div id="coordinatePanel" class="control-panel">
+        <h3 style="font-size: 0.95rem; margin-bottom: 6px; color: #f0f6fc;">Điều Khiển EE bằng Tọa Độ</h3>
+        <div class="ee-help">
+          Pose tool0 trong frame <code>base_link</code>. Kéo slider để thay đổi.
+          XYZ dùng mét; quaternion theo thứ tự <code>qx, qy, qz, qw</code>.
+          Ở SIMULATE, ghost robot cập nhật ngay sau khi thả slider; ở CONTROL,
+          slider gửi <code>set_tcp_pose()</code> tới robot thật.
+          Nút Submit dùng chung ở thanh trên.
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>X (m)</span><span class="val" id="val_ee_x">0.300</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('x', -0.005)">-</button>
+            <input type="range" id="ee_x" min="-0.10" max="0.70" step="0.001" value="0.300"
+                   oninput="onEESliderInput('x', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('x', 0.005)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>Y (m)</span><span class="val" id="val_ee_y">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('y', -0.005)">-</button>
+            <input type="range" id="ee_y" min="-0.60" max="0.60" step="0.001" value="0.000"
+                   oninput="onEESliderInput('y', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('y', 0.005)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>Z (m)</span><span class="val" id="val_ee_z">0.250</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('z', -0.005)">-</button>
+            <input type="range" id="ee_z" min="0.00" max="0.70" step="0.001" value="0.250"
+                   oninput="onEESliderInput('z', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('z', 0.005)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qx</span><span class="val" id="val_ee_qx">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qx', -0.01)">-</button>
+            <input type="range" id="ee_qx" min="-1.00" max="1.00" step="0.01" value="0.000"
+                   oninput="onEESliderInput('qx', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qx', 0.01)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qy</span><span class="val" id="val_ee_qy">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qy', -0.01)">-</button>
+            <input type="range" id="ee_qy" min="-1.00" max="1.00" step="0.01" value="0.000"
+                   oninput="onEESliderInput('qy', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qy', 0.01)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qz</span><span class="val" id="val_ee_qz">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qz', -0.01)">-</button>
+            <input type="range" id="ee_qz" min="-1.00" max="1.00" step="0.01" value="0.000"
+                   oninput="onEESliderInput('qz', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qz', 0.01)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qw</span><span class="val" id="val_ee_qw">1.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qw', -0.01)">-</button>
+            <input type="range" id="ee_qw" min="-1.00" max="1.00" step="0.01" value="1.000"
+                   oninput="onEESliderInput('qw', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qw', 0.01)">+</button>
+          </div>
+        </div>
+        <div id="eePreviewInfo" class="ee-info">Chưa có pose tọa độ.</div>
       </div>
-    </div>
-
-    <!-- Absolute EE target: preview on the ghost model, then submit to ROS. -->
-    <div class="ee-card">
-      <h3>Move EE with Coord</h3>
-      <div class="ee-help">
-        Nhập pose tool0 trong frame <code>base_link</code>. XYZ dùng mét;
-        quaternion theo thứ tự <code>qx, qy, qz, qw</code>.
-        Preview chỉ di chuyển robot ảo trong Third-Person; Submit mới gọi
-        <code>Robot.set_tcp_pose()</code> cho robot thật.
-      </div>
-      <div class="ee-grid">
-        <label class="ee-field">X (m)<input id="ee_x" type="number" step="0.001" value="0.300"></label>
-        <label class="ee-field">Y (m)<input id="ee_y" type="number" step="0.001" value="0.000"></label>
-        <label class="ee-field">Z (m)<input id="ee_z" type="number" step="0.001" value="0.250"></label>
-        <label class="ee-field">qx<input id="ee_qx" type="number" step="0.001" value="0.000"></label>
-        <label class="ee-field">qy<input id="ee_qy" type="number" step="0.001" value="0.000"></label>
-        <label class="ee-field">qz<input id="ee_qz" type="number" step="0.001" value="0.000"></label>
-        <label class="ee-field">qw<input id="ee_qw" type="number" step="0.001" value="1.000"></label>
-      </div>
-      <div class="ee-actions">
-        <button onclick="previewEE()">🔎 Preview trên Third-Person</button>
-        <button class="ee-submit" onclick="moveEE()">▶ Submit: set_tcp_pose</button>
-      </div>
-      <div id="eePreviewInfo"></div>
     </div>
 
     <!-- Camera USB: 2 thiet bi V4L, luon hien, doc lap hoan toan voi robot -->
@@ -1383,11 +1678,14 @@ class WebControlApp:
     const DEG_MIN = {json.dumps(deg_min)};
     const DEG_MAX = {json.dumps(deg_max)};
     let currentMode = "control";
+    let currentControlTab = "joint";
     let currentStream = "sim";
     let isDragging = false;
     // Slider vua tha nhung tay robot chua toi: giu hien gia tri nguoi dung chon
     // cho toi khi encoder duoi theo kip (xem onSliderCommit).
     let pendingSlider = {{}};
+    // Coordinate slider vua tha nhung feedback/IK chua theo kip.
+    let pendingEE = null;
 
     // Render 6 Joint Sliders
     function initSliders() {{
@@ -1515,10 +1813,35 @@ class WebControlApp:
     }}
 
     function setMode(mode) {{
+      // A mode switch establishes a new pose source. Do not keep a coordinate
+      // target from the previous mode while the server syncs the ghost.
+      if (mode !== currentMode) {{
+        pendingEE = null;
+        isDragging = false;
+      }}
       post("/api/set_mode", {{mode: mode}}).then(data => {{
         if (data && data.mode) updateModeUI(data.mode);
         fetchStatus();
       }});
+    }}
+
+    function renderControlTab(tab) {{
+      if (tab !== "joint" && tab !== "coordinate") return;
+      currentControlTab = tab;
+      const jointTab = document.getElementById("tabJoint");
+      const coordTab = document.getElementById("tabCoordinate");
+      const jointPanel = document.getElementById("jointPanel");
+      const coordPanel = document.getElementById("coordinatePanel");
+      jointTab.classList.toggle("active", tab === "joint");
+      coordTab.classList.toggle("active", tab === "coordinate");
+      jointPanel.classList.toggle("active", tab === "joint");
+      coordPanel.classList.toggle("active", tab === "coordinate");
+    }}
+
+    function setControlTab(tab) {{
+      if (tab !== "joint" && tab !== "coordinate") return;
+      renderControlTab(tab);
+      post("/api/set_control_tab", {{tab: tab}}).then(() => fetchStatus());
     }}
 
     function updateModeUI(mode) {{
@@ -1614,7 +1937,7 @@ class WebControlApp:
 
     function applyToReal() {{
       if (confirm("Xác nhận đưa robot thật di chuyển về pose mô phỏng hiện tại?")) {{
-        post("/api/apply_to_real").then(d => {{
+        post("/api/apply_to_real", {{control_tab: currentControlTab}}).then(d => {{
           if (d && d.status !== "error") alert(d.message);
           fetchStatus();
         }});
@@ -1629,6 +1952,31 @@ class WebControlApp:
       if (confirm("Xác nhận reset toàn bộ scene mô phỏng MuJoCo và vật thể về vị trí gốc?")) {{
         post("/api/reset_scene").then(() => fetchStatus());
       }}
+    }}
+
+    function setEESliderValue(name, value) {{
+      const input = document.getElementById("ee_" + name);
+      if (!input || !Number.isFinite(Number(value))) return;
+      input.value = Number(value);
+      onEESliderInput(name, input.value, false);
+    }}
+
+    function onEESliderInput(name, value, userInput = true) {{
+      if (userInput) isDragging = true;
+      const numeric = Number(value);
+      const label = document.getElementById("val_ee_" + name);
+      if (label && Number.isFinite(numeric)) label.innerText = numeric.toFixed(3);
+    }}
+
+    function stepEESlider(name, delta) {{
+      const input = document.getElementById("ee_" + name);
+      if (!input) return;
+      const min = Number(input.min);
+      const max = Number(input.max);
+      const value = Math.min(max, Math.max(min, Number(input.value) + delta));
+      input.value = value.toFixed(name === "x" || name === "y" || name === "z" ? 3 : 2);
+      onEESliderInput(name, input.value);
+      onEESliderCommit();
     }}
 
     function readEEPose() {{
@@ -1649,37 +1997,37 @@ class WebControlApp:
       }};
     }}
 
+    function setEEPoseInputs(position, quaternion) {{
+      if (!position || position.length !== 3 || !quaternion || quaternion.length !== 4) return;
+      ["x", "y", "z"].forEach((name, i) => setEESliderValue(name, position[i]));
+      ["qx", "qy", "qz", "qw"].forEach((name, i) => setEESliderValue(name, quaternion[i]));
+    }}
+
     function updateEEPreviewInfo(data, prefix) {{
       const el = document.getElementById("eePreviewInfo");
       if (!el || !data) return;
       const p = (data.actual_position || data.position || []).map(v => Number(v).toFixed(3));
       const err = Number(data.position_error_m);
-      el.innerText = prefix + " | EE preview: [" + p.join(", ") + "] m" +
-                     (Number.isFinite(err) ? " | loi vi tri " + (err * 1000).toFixed(1) + " mm" : "");
+      el.innerText = prefix + " | EE: [" + p.join(", ") + "] m" +
+                     (Number.isFinite(err) ? " | loi " + (err * 1000).toFixed(1) + " mm" : "");
     }}
 
-    function previewEE() {{
+    function onEESliderCommit() {{
       const pose = readEEPose();
-      if (!pose) return;
-      post("/api/ee_preview", pose).then(d => {{
+      if (!pose) {{
+        isDragging = false;
+        return;
+      }}
+      pendingEE = {{pose: pose, until: Date.now() + 8000}};
+      isDragging = false;
+      post("/api/set_ee_absolute", pose).then(d => {{
         if (d && d.status === "ok") {{
-          switchStream("third");
-          updateEEPreviewInfo(d, "Preview thanh cong");
-        }} else if (d) {{
-          updateEEPreviewInfo(d, "Preview that bai: " + (d.message || "IK khong hop le"));
+          if (currentMode === "simulate") switchStream("third");
+          updateEEPreviewInfo(d, currentMode === "simulate" ? "Ghost da cap nhat" : "Da gui set_tcp_pose");
+        }} else {{
+          pendingEE = null;
         }}
-      }});
-    }}
-
-    function moveEE() {{
-      const pose = readEEPose();
-      if (!pose) return;
-      if (!confirm("Xac nhan gui set_tcp_pose va di chuyen robot that toi pose nay?")) return;
-      post("/api/move_ee", pose).then(d => {{
-        if (d && d.status === "ok") {{
-          updateEEPreviewInfo(d, "Da gui set_tcp_pose");
-          fetchStatus();
-        }}
+        fetchStatus();
       }});
     }}
 
@@ -1687,7 +2035,17 @@ class WebControlApp:
       fetch("/api/status")
         .then(r => r.json())
         .then(data => {{
-          if (data.ui_mode) updateModeUI(data.ui_mode);
+          if (data.ui_mode) {{
+            if (data.ui_mode !== currentMode) {{
+              pendingEE = null;
+              isDragging = false;
+            }}
+            updateModeUI(data.ui_mode);
+          }}
+          if (data.control_tab && data.control_tab !== currentControlTab) {{
+            // Sync the server session without posting again on every poll.
+            renderControlTab(data.control_tab);
+          }}
 
           // Robot that dang chay quy dao -> khoa nut "Dua robot that ve pose nay"
           // de tranh bam trung lam nhieu lenh chong nhau.
@@ -1698,6 +2056,40 @@ class WebControlApp:
           if (tj.error) showErr("Lỗi di chuyển robot thật: " + tj.error);
           if (data.ee_preview) {{
             updateEEPreviewInfo(data.ee_preview, "Preview đang hiển thị");
+          }}
+
+          if (currentControlTab === "coordinate" && !isDragging) {{
+            const ep = data.ee_control_pose || {{}};
+            const p = ep.position;
+            const q = ep.quaternion;
+            if (p && p.length === 3 && q && q.length === 4) {{
+              let holdPending = false;
+              if (pendingEE) {{
+                const target = pendingEE.pose.position;
+                const targetQ = pendingEE.pose.quaternion;
+                const error = Math.hypot(
+                  Number(p[0]) - target[0],
+                  Number(p[1]) - target[1],
+                  Number(p[2]) - target[2]
+                );
+                const qError = Math.min(
+                  Math.hypot(Number(q[0]) - targetQ[0], Number(q[1]) - targetQ[1],
+                             Number(q[2]) - targetQ[2], Number(q[3]) - targetQ[3]),
+                  Math.hypot(Number(q[0]) + targetQ[0], Number(q[1]) + targetQ[1],
+                             Number(q[2]) + targetQ[2], Number(q[3]) + targetQ[3])
+                );
+                if (Date.now() <= pendingEE.until && (error > 0.005 || qError > 0.04)) {{
+                  holdPending = true;
+                }} else {{
+                  pendingEE = null;
+                }}
+              }}
+              if (holdPending) {{
+                setEEPoseInputs(pendingEE.pose.position, pendingEE.pose.quaternion);
+              }} else {{
+                setEEPoseInputs(p, q);
+              }}
+            }}
           }}
 
           // Cap nhat TCP
