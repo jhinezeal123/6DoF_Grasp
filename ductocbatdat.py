@@ -149,7 +149,10 @@ def _solve_ik(T_target, q_now, n_restart=15):
     return best[0], best[2], best[3]
 
 
-GRIP_L = 45.74  # mm: tu tool0 toi diem gripper, do thuc nghiem (lech chuan 0.75mm qua 9 tu the)
+# mm: tool0 -> tam gap (gripper_base_link), lay tu URDF chu khong do firmware.
+# Huong ra ngoai cua tool la -z (flange o +118, tool0 o 0, dau ngon o +74.5..+99.5).
+# test_gripper_pose.py kiem tra lai hang so nay voi URDF.
+GRIP_L = 87.0
 
 
 def get_gripper_pose():
@@ -157,7 +160,7 @@ def get_gripper_pose():
 
     CUNG quy uoc voi set_gripper_pose -> doc roi ghi lai duoc:
         set_gripper_pose(*get_gripper_pose())   # khong di chuyen
-    Tra None neu loi doc goc khop.
+    rpy=[0,0,0] nghia la gripper CHUC THANG XUONG. Tra None neu loi doc goc khop.
     """
     import numpy as np
     from scipy.spatial.transform import Rotation as R
@@ -202,12 +205,15 @@ def set_tcp_pose(coords, speed, tol=2.0, timeout_s=30):
     return e <= tol
 
 
-def set_gripper_pose(x, y, z, rx=180.0, ry=0.0, rz=0.0, speed=20,
+def set_gripper_pose(x, y, z, rx=0.0, ry=0.0, rz=0.0, speed=20,
                      tol_pos=1.0, tol_rot=1.0, timeout_s=30, drop_max=30.0):
     """Dua GRIPPER toi pose [x,y,z mm | rx,ry,rz do Euler XYZ] trong he URDF. Tra True/False.
 
-    Gripper = tool0 + 45.74mm doc truc z. rx=180 -> chuc thang xuong.
-    NHIEU POSE KHONG TOI DUOC: chuc thang xuong gan de thuong vuot wrist_flex [-90..120].
+    Gripper = tam gap (gripper_base_link), cach tool0 87mm. Huong ra ngoai cua tool la
+    -z cua tool0, nen rpy=[0,0,0] la CHUC THANG XUONG (da kiem chung 2 cach: truc -z cua
+    tool0 va vector flange->gripper_base deu = [0,0,-1] khi rpy=0).
+    rpy=[180,0,0] la chuc thang LEN.
+    Nghieng: rx=180 khong phai chuc xuong. Muon nghieng thi doi ry (vd ry=30 -> nghieng 30 do).
     Giai khong ra (vi tri HOAC huong lech qua tol) -> tra False, KHONG chay gi.
     Kiem tra them duong di: noi suy goc khop, neu tut qua drop_max so voi ca hai dau -> chan.
     """
