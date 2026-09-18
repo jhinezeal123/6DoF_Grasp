@@ -61,12 +61,23 @@ def temperature():
     return t if isinstance(t, list) and len(t) == 6 else None
 
 
-def set_tcp_pose(coords, speed, tol=2.0):
-    """Gui TCP [x,y,z,rx,ry,rz] mm+do, tra True CHI KHI toi noi. Ngoai tam voi -> firmware TU CHOI im lang, is_moving()==0 gia tao thanh cong."""
+def set_tcp_pose(coords, speed, tol=20.0, settle_s=0.6, timeout_s=60):
+    """Gui TCP [x,y,z,rx,ry,rz] mm+do, tra True khi sai so <= tol.
+    is_moving() KHONG dung duoc de biet da toi: no tra 0 ngay khi tay con dang di -> phai cho
+    vi tri DUNG YEN that (settle_s). tol=20 vi sai so vong ho cua tay nay co chuc mm, khong phai mm."""
     a = _open()
     a.write_coords(coords, speed)
-    while a.is_moving() == 1:
+    last, still, deadline = None, 0.0, time.time() + timeout_s
+    while time.time() < deadline:
         time.sleep(0.05)
+        now = a.get_coords()
+        if now == last:
+            still += 0.05
+            if still >= settle_s:
+                break  # dung yen du lau -> coi nhu xong
+        else:
+            still = 0.0  # con doi -> dem lai tu dau
+        last = now
     now = a.get_coords()
     err = max(abs(n - t) for n, t in zip(now[:3], coords[:3]))
     print("sai so %.1f mm (cho phep %.1f): %s" % (err, tol, "TOI" if err <= tol else "KHONG TOI"))
