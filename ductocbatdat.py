@@ -278,11 +278,17 @@ def set_joint(joint_id, degree, speed=30, wait=True, timeout_s=30):
 
 
 def state():
-    """In 6 khop (do), do mo gripper (0..100), TCP [x,y,z mm + rx,ry,rz do Euler]. -1 = chua bat dien/loi doc."""
+    """In 6 khop (do), do mo gripper (0..100), pose gripper URDF va toa do firmware.
+
+    'gripper' la con so dung duoc: cung quy uoc voi get/set_gripper_pose -> truyen thang
+    duoc vao set_gripper_pose. 'fw' la toa do firmware vendor, KHONG dung cho IK
+    (khac he quy chieu). -1 = chua bat dien/loi doc.
+    """
     a = _open()
-    print("khop  :", [round(x, 2) for x in a.get_angles()])
-    print("grip  :", a.get_gripper_value())
-    print("tcp   :", [round(x, 2) for x in a.get_coords()])
+    print("khop   :", [round(x, 2) for x in a.get_angles()])
+    print("grip   :", a.get_gripper_value())
+    print("gripper:", get_gripper_pose(), " <- he URDF, dung duoc")
+    print("fw     :", [round(x, 2) for x in a.get_coords()], " <- firmware vendor")
 
 
 def port_free(port=PORT):
