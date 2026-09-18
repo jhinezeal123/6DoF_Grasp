@@ -61,14 +61,17 @@ def temperature():
     return t if isinstance(t, list) and len(t) == 6 else None
 
 
-def set_tcp_pose(coords, speed):
-    """Gui TCP [x,y,z,rx,ry,rz] - mm + do. write_coords() tra ngay chu tay chua toi -> cho is_moving roi in state()."""
+def set_tcp_pose(coords, speed, tol=2.0):
+    """Gui TCP [x,y,z,rx,ry,rz] mm+do, tra True CHI KHI toi noi. Ngoai tam voi -> firmware TU CHOI im lang, is_moving()==0 gia tao thanh cong."""
     a = _open()
     a.write_coords(coords, speed)
     while a.is_moving() == 1:
         time.sleep(0.05)
+    now = a.get_coords()
+    err = max(abs(n - t) for n, t in zip(now[:3], coords[:3]))
+    print("sai so %.1f mm (cho phep %.1f): %s" % (err, tol, "TOI" if err <= tol else "KHONG TOI"))
     state()
-    return a.is_moving() == 0
+    return err <= tol
 
 
 def set_joints(angles, speed=30, wait=True, timeout_s=30):
