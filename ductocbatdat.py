@@ -96,7 +96,7 @@ def set_joint(joint_id, degree, speed=30, wait=True, timeout_s=30):
 
 
 def state():
-    """In 6 khop (do), do mo gripper (0..100), TCP [x,y,z,q1,q2,q3,q4] (mm + do). -1 = chua bat dien/loi doc."""
+    """In 6 khop (do), do mo gripper (0..100), TCP [x,y,z mm + rx,ry,rz do Euler]. -1 = chua bat dien/loi doc."""
     a = _open()
     print("khop  :", [round(x, 2) for x in a.get_angles()])
     print("grip  :", a.get_gripper_value())
