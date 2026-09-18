@@ -93,6 +93,21 @@ def _fk(qd):
     return d.oMf[m.getFrameId("tool0")]
 
 
+def _grip(M):
+    """pin.SE3 cua tool0 -> vi tri gripper (mm, he URDF)."""
+    import numpy as np
+    return M.translation * 1000.0 + M.rotation @ np.array([0.0, 0.0, GRIP_L])
+
+
+def _q_now():
+    """Doc 6 goc khop hien tai (do). Tra None neu loi doc."""
+    q = _open().get_angles()
+    if not isinstance(q, list) or len(q) != 6 or -1 in q:
+        print("doc goc khop loi:", q, "-> khong chay gi")
+        return None
+    return q
+
+
 def _solve_ik(T_target, q_now, n_restart=15):
     """IK 6 DOF thuan toan hoc (khong mo port -> test duoc). Tra (q_goal_do, ep_mm, eo_do).
 
@@ -137,6 +152,23 @@ def _solve_ik(T_target, q_now, n_restart=15):
 GRIP_L = 45.74  # mm: tu tool0 toi diem gripper, do thuc nghiem (lech chuan 0.75mm qua 9 tu the)
 
 
+def get_gripper_pose():
+    """Pose gripper hien tai [x,y,z mm | rx,ry,rz do Euler XYZ], he URDF.
+
+    CUNG quy uoc voi set_gripper_pose -> doc roi ghi lai duoc:
+        set_gripper_pose(*get_gripper_pose())   # khong di chuyen
+    Tra None neu loi doc goc khop.
+    """
+    import numpy as np
+    from scipy.spatial.transform import Rotation as R
+    q = _q_now()
+    if q is None:
+        return None
+    M = _fk(q)
+    return ([round(float(v), 2) for v in _grip(M)]
+            + [round(float(v), 2) for v in R.from_matrix(M.rotation).as_euler("xyz", degrees=True)])
+
+
 def set_tcp_pose(coords, speed, tol=2.0, timeout_s=30):
     """TCP [x,y,z mm, rx,ry,rz do Euler] -> IK (Pinocchio+URDF) -> write_angles. Tra True neu toi noi.
 
@@ -148,10 +180,8 @@ def set_tcp_pose(coords, speed, tol=2.0, timeout_s=30):
     import numpy as np
     import pinocchio as pin
     from scipy.spatial.transform import Rotation as R
-    a = _open()
-    q_now = a.get_angles()
-    if not isinstance(q_now, list) or len(q_now) != 6 or -1 in q_now:
-        print("doc goc khop loi:", q_now, "-> khong chay gi")
+    q_now = _q_now()
+    if q_now is None:
         return False
     q_goal, ep, eo = _solve_ik(
         pin.SE3(R.from_euler("xyz", coords[3:], degrees=True).as_matrix(),
@@ -160,6 +190,7 @@ def set_tcp_pose(coords, speed, tol=2.0, timeout_s=30):
         print("POSE KHONG TOI DUOC: vi tri lech %.2f mm, huong lech %.2f do -> khong chay gi"
               % (ep, eo))
         return False
+    a = _open()
     a.write_angles(q_goal, speed)
     deadline = time.time() + timeout_s
     while time.time() < deadline and a.is_moving() == 1:
@@ -184,10 +215,8 @@ def set_gripper_pose(x, y, z, rx=180.0, ry=0.0, rz=0.0, speed=20,
     import pinocchio as pin
     from scipy.spatial.transform import Rotation as R
 
-    a = _open()
-    q_now = a.get_angles()
-    if not isinstance(q_now, list) or len(q_now) != 6 or -1 in q_now:
-        print("doc goc khop loi:", q_now, "-> khong chay gi")
+    q_now = _q_now()
+    if q_now is None:
         return False
 
     Rg = R.from_euler("xyz", [rx, ry, rz], degrees=True).as_matrix()
@@ -202,24 +231,21 @@ def set_gripper_pose(x, y, z, rx=180.0, ry=0.0, rz=0.0, speed=20,
         return False
 
     # duong di: tay noi suy theo GOC KHOP, kiem tra co tut qua sau khong
-    off = np.array([0.0, 0.0, GRIP_L])
-    zs = []
-    for t in np.linspace(0.0, 1.0, 11):
-        Mt = _fk([p + t * (g - p) for p, g in zip(q_now, q_goal)])
-        zs.append(float((Mt.translation * 1000.0 + Mt.rotation @ off)[2]))
+    zs = [float(_grip(_fk([p + t * (g - p) for p, g in zip(q_now, q_goal)]))[2])
+          for t in np.linspace(0.0, 1.0, 11)]
     z_min_ok = min(zs[0], zs[-1]) - drop_max
     if min(zs) < z_min_ok:
         print("DUONG DI TUT QUA: xuong %.1f mm, gioi han %.1f -> khong chay gi"
               % (min(zs), z_min_ok))
         return False
 
+    a = _open()
     a.write_angles(q_goal, speed)
     deadline = time.time() + timeout_s
     while time.time() < deadline and a.is_moving() == 1:
         time.sleep(0.05)
     time.sleep(0.5)
-    Mt = _fk(a.get_angles())
-    p_end = Mt.translation * 1000.0 + Mt.rotation @ off
+    p_end = _grip(_fk(a.get_angles()))
     err = float(np.linalg.norm(p_end - np.array([x, y, z], dtype=float)))
     e = max(abs(p - g) for p, g in zip(a.get_angles(), q_goal))
     print("gripper (URDF): %s  | dich: %s" % (np.round(p_end, 1), [round(v, 1) for v in (x, y, z)]))

@@ -21,6 +21,13 @@ print("tu the  :", q_now)
 print("gripper :", np.round(p, 1), " rpy:", np.round(rpy, 2))
 print()
 
+# get_gripper_pose phai tra dung thu set_gripper_pose nhan vao
+gp = d.get_gripper_pose()
+assert gp is not None and len(gp) == 6, "get_gripper_pose tra ve: %s" % (gp,)
+assert np.allclose(gp[:3], p, atol=0.01), "vi tri get %s != FK %s" % (gp[:3], np.round(p, 2))
+assert np.allclose(gp[3:], rpy, atol=0.01), "huong get %s != FK %s" % (gp[3:], np.round(rpy, 2))
+print("  OK  get_gripper_pose khop voi _fk:", gp)
+
 
 def thu(nhan, pos, rpy_t):
     Rg = R.from_euler("xyz", rpy_t, degrees=True).as_matrix()
@@ -32,6 +39,14 @@ def thu(nhan, pos, rpy_t):
 # _fk phai tu kiem chung: giai lai chinh tu the hien tai phai ra dung goc cu
 assert thu("gio nguyen", p, rpy), "_fk/_solve_ik khong nhat quan - bo giai hong"
 print("  OK  _solve_ik tim lai dung tu the hien tai")
+
+# vong tron get -> set: IK tren chinh pose doc duoc phai ra lai dung goc khop cu
+qg, ep, eo = d._solve_ik(pin.SE3(R.from_euler("xyz", gp[3:], degrees=True).as_matrix(),
+                                 (np.array(gp[:3]) - R.from_euler("xyz", gp[3:], degrees=True).as_matrix()
+                                  @ np.array([0.0, 0.0, d.GRIP_L])) / 1000.0), q_now)
+assert ep < 0.01 and eo < 0.01, "vong tron get->set lech: %.3f mm / %.3f do" % (ep, eo)
+assert max(abs(x - y) for x, y in zip(qg, q_now)) < 0.5, "goc khop khac: %s vs %s" % (np.round(qg, 2), q_now)
+print("  OK  vong tron get -> set -> IK ra lai dung goc khop cu")
 
 # huong giu nguyen, nhich len cao - phai toi duoc
 assert thu("+30mm Z", p + [0, 0, 30], rpy), "khong toi duoc +30mm Z"
