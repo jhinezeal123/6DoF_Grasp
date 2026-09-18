@@ -62,8 +62,13 @@ def temperature():
 
 
 def set_tcp_pose(coords, speed):
-    """Gui TCP [x,y,z,rx,ry,rz] - mm + do (KHONG phai m + rad). Di chuyen that, kiem tra vung lam viec truoc."""
-    return _open().write_coords(coords, speed)
+    """Gui TCP [x,y,z,rx,ry,rz] - mm + do. write_coords() tra ngay chu tay chua toi -> cho is_moving roi in state()."""
+    a = _open()
+    a.write_coords(coords, speed)
+    while a.is_moving() == 1:
+        time.sleep(0.05)
+    state()
+    return a.is_moving() == 0
 
 
 def set_joints(angles, speed=30, wait=True, timeout_s=30):
