@@ -3,6 +3,10 @@
 # Python
 __pycache__/
 *.pyc
+.venv/
+*.egg-info/
+build/
+dist/
 
 # Mesh: file .dae nang, khong commit (dung .obj/.stl)
 *.dae
@@ -17,3 +21,18 @@ simu/
 # khong duoc di theo code. sync.ps1 dung `git add -A` nen thieu dong nay la lan push
 # toi se ghim offset cua mot may vao repo.
 SDK/program/offsets.json
+src/m750/ros/offsets.json
+
+# Benchmark camera: ket qua do tren tung may (script thi giu)
+benchmark_camera/bench.log
+benchmark_camera/benchmark_report.json
+benchmark_camera/benchmark_results.csv
+
+# Thu nghiem Kaggle (tarball + checkpoint ~1.9GB) - khong thuoc repo
+mujoco_on_kaggle/
+
+# Artifact sinh ra khi chay tai goc repo
+/cap_img.jpg
+/preview.jpg
+/stop_cam
+/*.png

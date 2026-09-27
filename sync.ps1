@@ -5,7 +5,7 @@
 #   .\sync.ps1 pull             # local pull tu GitHub
 #   .\sync.ps1 status           # xem trang thai hai ben
 #
-# Root local : D:/Documents/mujoco/htc        (git root = thu muc lam viec)
+# Root local : thu muc chua script nay ($PSScriptRoot = git root)
 # Root server: /workspace/6DoF_Grasp/htc      (git root = thu muc lam viec)
 
 param(
@@ -18,7 +18,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$LocalRoot = 'D:\Documents\mujoco\htc'
+# Khong hardcode nua: truoc day gan cung D:\...\htc nen chay tu clone khac
+# se am thom thao tac tren clone SAI.
+$LocalRoot = $PSScriptRoot
 $SrvRoot = '/workspace/6DoF_Grasp/htc'
 $SrvHost = 'ktmt'
 
