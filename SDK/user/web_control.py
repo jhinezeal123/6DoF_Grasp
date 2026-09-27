@@ -10,7 +10,6 @@ Cung cap:
   - Tich hop Live Camera stream tu class Camera.
 """
 import os
-import sys
 import time
 import json
 import multiprocessing as mp
@@ -176,9 +175,6 @@ class WebControlHandler(BaseHTTPRequestHandler):
         sid = uuid.uuid4().hex[:12]
         self._pending_sid = sid
         return sid
-
-    def _send_json_header(self):
-        pass
 
     def _flush_sid_cookie(self):
         """Gui Set-Cookie cho phien moi (goi ngay sau send_response)."""

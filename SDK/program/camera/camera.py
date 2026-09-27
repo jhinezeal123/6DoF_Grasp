@@ -14,10 +14,7 @@ thiet bi V4L, nen khong con chuyen hai tien trinh gianh nhau `/dev/video0`.
 from __future__ import annotations
 
 import threading
-import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import cv2
 import mujoco
@@ -25,51 +22,6 @@ import numpy as np
 from sensor_msgs.msg import Image
 
 from program.ros_bridge import CAMERA_DEVICE, TOPIC_CAMERA_IMAGE, get_bridge
-from script.compressor import ImageCompressor
-
-
-class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
-
-
-class CameraStreamHandler(BaseHTTPRequestHandler):
-    """HTTP Handler phuc vu luong MJPEG video."""
-
-    def log_message(self, format, *args):
-        pass
-
-    def do_GET(self):
-        if self.path not in ("/", "/stream.mjpg", "/video", "/stream"):
-            self.send_error(404)
-            return
-
-        self.send_response(200)
-        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.end_headers()
-
-        cam_obj: "Camera" = self.server.camera_ref
-        last_sent = None
-        try:
-            while cam_obj and cam_obj.is_streaming:
-                # Chi DOC frame da render san (khong tu render o day):
-                # renderer MuJoCo/EGL gan chat vao thread da tao no.
-                with cam_obj._lock:
-                    jpeg_bytes = cam_obj._stream_jpeg
-                if jpeg_bytes and jpeg_bytes is not last_sent:
-                    last_sent = jpeg_bytes
-                    header = (
-                        b"--frame\r\n"
-                        b"Content-Type: image/jpeg\r\n"
-                        b"Content-Length: " + str(len(jpeg_bytes)).encode() + b"\r\n\r\n"
-                    )
-                    self.wfile.write(header + jpeg_bytes + b"\r\n")
-                time.sleep(1.0 / float(cam_obj.stream_fps))
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        except Exception:
-            pass
 
 
 class Camera:
@@ -79,16 +31,12 @@ class Camera:
                  mj_data: Optional[mujoco.MjData] = None,
                  camera_name: str = "wrist_cam",
                  width: int = 640, height: int = 480,
-                 fov_y_deg: float = 70.0,
-                 external_render: bool = False):
+                 fov_y_deg: float = 70.0):
         """
         Args:
             mj_model, mj_data: chi truyen khi muon camera trong scene MuJoCo.
                 Bo trong = camera that qua ROS 2 (device co dinh, khong tham so).
             camera_name: ten camera trong XML (vd 'wrist_cam', 'view_cam').
-            external_render: True neu caller tu goi update_stream_frame() trong
-                vong lap cua no -> stream() khong tao thread render rieng, tranh
-                hai thread cung ghi vao mjData.
         """
         self.m = mj_model
         self.d = mj_data
@@ -97,7 +45,6 @@ class Camera:
         self.width = width
         self.height = height
         self.fov_y_deg = fov_y_deg
-        self.external_render = external_render
         self.device_path = CAMERA_DEVICE
 
         self._lock = threading.RLock()
@@ -105,14 +52,6 @@ class Camera:
         self._ros_image = None
         self._last_frame: Optional[np.ndarray] = None
         self._mj_lock = threading.RLock()
-
-        self.stream_server = None
-        self.stream_thread = None
-        self.is_streaming = False
-        self.stream_fps = 25.0
-        self.stream_port = None
-        self._stream_jpeg = None
-        self._render_thread = None
 
         if self.is_simulation:
             self._init_simulation()
@@ -123,8 +62,8 @@ class Camera:
     # ------------------------------------------------------------------ khoi tao
     def _init_simulation(self) -> None:
         self.cam_id = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_CAMERA, self.camera_name)
-        # Doc fovy THAT tu model thay vi dung hang so: neu lech, pixel_to_3d_base
-        # se sai ti le. fovy=0 nghia la camera dung 'sensorsize'/'focal'.
+        # Doc fovy THAT tu model thay vi dung hang so (fovy=0 nghia la camera
+        # dung 'sensorsize'/'focal').
         if self.cam_id >= 0 and 0.0 < float(self.m.cam_fovy[self.cam_id]) < 180.0:
             self.fov_y_deg = float(self.m.cam_fovy[self.cam_id])
         # KHONG tao Renderer o day: EGL context gan chat vao thread tao no, nen
@@ -166,22 +105,6 @@ class Camera:
             f[mujoco.mjtRndFlag.mjRND_REFLECTION] = 0
         except Exception:
             pass  # API noi bo doi -> bo qua, khong lam chet render
-
-    def reset_renderer(self):
-        """
-        Bo renderer de thread khac tao lai.
-
-        Renderer MuJoCo/EGL gan chat vao thread da tao no. Neu photo() duoc goi
-        lan dau o thread A roi sau do goi tu thread B, thread B se nhan frame
-        RONG (khong loi, chi im lang) -> stream dung hinh.
-        """
-        with self._lock:
-            if self._renderer is not None:
-                try:
-                    self._renderer.close()
-                except Exception:
-                    pass
-            self._renderer = None
 
     # ------------------------------------------------------------------ anh
     def photo(self) -> np.ndarray:
@@ -235,183 +158,6 @@ class Camera:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
             self._last_frame = placeholder
             return placeholder
-
-    # ------------------------------------------------------------------ hinh hoc
-    @property
-    def position(self) -> np.ndarray:
-        """
-        Toa do 3D camera [X, Y, Z] trong he base_link.
-
-        Voi camera MuJoCo: doc tu model. Voi camera that: vi tri nam tren TF
-        (wrist_camera_optical_frame) - chua doc TF trong giai doan nay, tra nan
-        thay vi tra mot con so bia.
-        """
-        if not self.is_simulation:
-            return np.full(3, np.nan, dtype=np.float64)
-        with self._lock:
-            mujoco.mj_forward(self.m, self.d)
-            if self.cam_id >= 0:
-                return self.d.cam_xpos[self.cam_id].copy()
-            return np.array([0.25, -0.65, 0.45], dtype=np.float64)
-
-    @property
-    def rotation_matrix(self) -> np.ndarray:
-        if not self.is_simulation:
-            return np.full((3, 3), np.nan, dtype=np.float64)
-        with self._lock:
-            mujoco.mj_forward(self.m, self.d)
-            if self.cam_id >= 0:
-                return self.d.cam_xmat[self.cam_id].reshape(3, 3).copy()
-            return np.eye(3, dtype=np.float64)
-
-    @property
-    def distribution(self) -> Dict[str, Any]:
-        pos = self.position
-        return {
-            "position": pos,
-            "matrix": self.rotation_matrix,
-            "coordinates": (float(pos[0]), float(pos[1]), float(pos[2])),
-            "camera_name": self.camera_name,
-            "is_simulation": self.is_simulation,
-            "resolution": (self.width, self.height),
-            "topic": None if self.is_simulation else TOPIC_CAMERA_IMAGE,
-            "device_path": None if self.is_simulation else self.device_path,
-        }
-
-    distribute = distribution
-
-    def pixel_to_3d_base(self, u: float, v: float, depth_m: Optional[float] = None,
-                         table_z: Optional[float] = None) -> np.ndarray:
-        """
-        Chieu nguoc diem anh (u, v) sang toa do 3D base_link. CHI dung cho camera
-        MuJoCo: camera that can TF + ma tran noi tai tu camera_info (giai doan sau).
-
-        Hai che do:
-          - Co depth_m: dung do sau quang hoc doc truc nhin.
-          - Khong co depth_m: ray-casting cat mat phang lam viec z = table_z.
-            Chi co nghia khi camera NHIN XUONG mat ban. Voi wrist_cam (eye-in-hand
-            nhin ngang ve phia truoc), tia nhin song song mat ban nen ray-casting
-            KHONG dung duoc -> raise ValueError thay vi tra mot diem rac.
-
-        Quy uoc truc (theo MuJoCo, KHAC OpenCV):
-            cam_mat cot 0 = x_cam (sang phai trong anh)
-            cam_mat cot 1 = y_cam (HUONG LEN trong anh)
-            cam_mat cot 2 = z_cam, camera nhin theo -z_cam
-        """
-        if not self.is_simulation:
-            raise ValueError("pixel_to_3d_base chi ho tro camera MuJoCo.")
-        if table_z is None:
-            from script.scene import table_z as _tz
-            table_z = _tz(self.m)
-
-        with self._lock:
-            mujoco.mj_forward(self.m, self.d)
-            if self.cam_id >= 0:
-                cam_pos = self.d.cam_xpos[self.cam_id].copy()
-                cam_mat = self.d.cam_xmat[self.cam_id].reshape(3, 3).copy()
-            else:
-                cam_pos = self.position.copy()
-                cam_mat = self.rotation_matrix.copy()
-
-        fy = self.height / (2.0 * np.tan(np.radians(self.fov_y_deg) / 2.0))
-        fx = fy
-        ray_cam = np.array([(u - self.width / 2.0) / fx,
-                            (self.height / 2.0 - v) / fy, -1.0])
-        ray_dir = cam_mat @ ray_cam
-
-        if depth_m is not None and depth_m > 0:
-            return cam_pos + depth_m * ray_dir
-
-        if abs(ray_dir[2]) < 1e-6 * max(1.0, np.linalg.norm(ray_dir)):
-            raise ValueError(
-                "Khong the ray-cast xuong mat ban: tia nhin song song mat phang z=%.3f "
-                "(ray_dir.z=%.2e). Camera nay nhin ngang, hay truyen depth_m." % (table_z, ray_dir[2])
-            )
-        t = (table_z - cam_pos[2]) / ray_dir[2]
-        if t <= 0:
-            raise ValueError(
-                "Khong the ray-cast: mat phang z=%.3f nam SAU camera (t=%.3f). "
-                "Camera dang nhin ra xa mat ban, hay truyen depth_m." % (table_z, t)
-            )
-        point = cam_pos + t * ray_dir
-        if np.linalg.norm(point - cam_pos) > 10.0:
-            raise ValueError(
-                "Khong the ray-cast: tia cat mat phang z=%.3f tai diem cach camera %.1f m "
-                "(tia gan song song mat phang). Hay truyen depth_m." % (table_z, np.linalg.norm(point - cam_pos))
-            )
-        return point
-
-    # ------------------------------------------------------------------ stream
-    def stream(self, port: int, fps: float = 25.0):
-        """Stream frame lien tuc len network port chi dinh qua MJPEG."""
-        if self.is_streaming:
-            print(f"[Camera] Stream dang chay tai port {self.stream_port}.")
-            return
-
-        self.stream_port = port
-        self.stream_fps = fps
-        self.is_streaming = True
-
-        # Thread render RIENG: renderer MuJoCo/EGL gan chat vao thread da tao no,
-        # nen khong the goi photo() tu thread cua HTTP handler.
-        def _render_loop():
-            self._renderer = None
-            while self.is_streaming:
-                try:
-                    frame = self.photo()
-                    if frame is not None and frame.size > 0:
-                        jpeg_bytes = ImageCompressor.encode_jpeg(frame, quality=75)
-                        if jpeg_bytes:
-                            with self._lock:
-                                self._stream_jpeg = jpeg_bytes
-                except Exception as e:
-                    print(f"[Camera] Loi render stream: {e}")
-                time.sleep(1.0 / max(float(self.stream_fps), 1.0))
-
-        if not self.external_render:
-            self._render_thread = threading.Thread(target=_render_loop, name="CameraRender", daemon=True)
-            self._render_thread.start()
-
-        def _run_server():
-            try:
-                self.stream_server = ThreadedHTTPServer(("0.0.0.0", port), CameraStreamHandler)
-                self.stream_server.camera_ref = self
-                print(f"[Camera] Bat dau MJPEG stream tai http://0.0.0.0:{port}/stream.mjpg (@ {fps:.1f} FPS)")
-                self.stream_server.serve_forever()
-            except Exception as e:
-                print(f"[Camera] Loi server stream tai port {port}: {e}")
-                self.is_streaming = False
-
-        self.stream_thread = threading.Thread(target=_run_server, name=f"CameraStream-{port}", daemon=True)
-        self.stream_thread.start()
-
-    def update_stream_frame(self):
-        """Render 1 frame va cap nhat cache cho stream (khi external_render=True)."""
-        try:
-            frame = self.photo()
-            if frame is not None and frame.size > 0:
-                jpeg_bytes = ImageCompressor.encode_jpeg(frame, quality=75)
-                if jpeg_bytes:
-                    with self._lock:
-                        self._stream_jpeg = jpeg_bytes
-                    return True
-        except Exception as e:
-            print(f"[Camera] Loi update_stream_frame: {e}")
-        return False
-
-    def stop_stream(self):
-        self.is_streaming = False
-        if self._render_thread is not None:
-            self._render_thread.join(timeout=2.0)
-            self._render_thread = None
-        if self.stream_server is not None:
-            try:
-                self.stream_server.shutdown()
-                self.stream_server.server_close()
-            except Exception:
-                pass
-            self.stream_server = None
-        print(f"[Camera] Da dung stream tai port {self.stream_port}")
 
 
 __all__ = ["Camera"]

@@ -80,6 +80,11 @@ class Robot:
         # Chi so cac khop ma lenh vua roi THUC SU yeu cau di chuyen. Khop giu
         # nguyen vi tri khong the "toi noi" theo nghia nao (xem wait_until_at).
         self._moving = None
+        # Dich cuoi cung (rad). INSTANCE attribute - truoc day la class attribute
+        # dung chung cho ca class: instance chua tung goi lenh nao doc vao gia tri
+        # chia se (bug nho, 'ctrl' tra zeros(6) mac dinh cua class).
+        self._cmd = np.zeros(6, dtype=np.float64)
+        self._cmd_grip = 0.0
 
     # ------------------------------------------------------------------ gioi han
     @property
@@ -197,8 +202,6 @@ class Robot:
             "is_simulation": False,
             "is_real_connected": self.is_real_connected,
         }
-
-    distribute = distribution
 
     # ------------------------------------------------------------------ lenh
     def _resolve_joint_index(self, p: Union[int, str]) -> Optional[int]:
@@ -373,9 +376,6 @@ class Robot:
         target[idx] = float(np.clip(target_val, self.rad_min[idx], self.rad_max[idx]))
         return self._go(target)
 
-    def set_joint_deg(self, p: Union[int, str], target_deg: float) -> bool:
-        return self.set_joint(p, np.radians(target_deg))
-
     def set_pose(self, q_rad, grip: Optional[float] = None) -> bool:
         """Dat CA 6 khop trong MOT dich duy nhat (khong phai 6 lenh noi tiep)."""
         ok = self._go(q_rad)
@@ -494,12 +494,6 @@ class Robot:
         if grip is not None:
             self.set_opening(grip)
         return ok
-
-    FollowTrajector = FollowTrajectory
-
-    # ------------------------------------------------------------------ noi bo
-    _cmd = np.zeros(6, dtype=np.float64)
-    _cmd_grip = 0.0
 
 
 __all__ = ["Robot"]
