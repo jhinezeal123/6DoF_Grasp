@@ -30,8 +30,11 @@ from .robot import (
 )
 from .sync import (
     AffineJointMapper,
+    GripperMapper,
+    IdentityGripperMapper,
     IdentityJointMapper,
     JointMapper,
+    RangeGripperMapper,
     RealToSim,
     SimToReal,
     TransferResult,
@@ -69,6 +72,8 @@ __all__ = [
     "EmergencyStopController",
     "GraspCandidate",
     "GripperController",
+    "GripperMapper",
+    "IdentityGripperMapper",
     "IdentityJointMapper",
     "JointLimits",
     "JointMapper",
@@ -78,6 +83,7 @@ __all__ = [
     "PerceptionRequest",
     "PerceptionResult",
     "PowerController",
+    "RangeGripperMapper",
     "RealToSim",
     "RobotControl",
     "RobotDriver",

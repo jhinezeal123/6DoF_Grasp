@@ -71,7 +71,7 @@ mô hình cũ FakeRobot(Robot).
 
     import numpy as np
 
-    from m750 import AffineJointMapper, RealToSim, SimToReal
+    from m750 import AffineJointMapper, RangeGripperMapper, RealToSim, SimToReal
     from m750.robot.adapters.mujoco import MujocoRobotDriver
     from m750.robot.adapters.ros import RosRobotDriver
 
@@ -82,11 +82,27 @@ mô hình cũ FakeRobot(Robot).
         offset_rad=tuple(np.radians([-1, 2, 0, 0, 0, 0]))
     )
 
-    RealToSim(real, sim, target_gripper=sim, mapper=real_to_sim).execute()
-    SimToReal(sim, real, target_gripper=real).execute()
+    real_to_sim_gripper = RangeGripperMapper(
+        real.max_gripper_opening_m, sim.max_gripper_opening_m
+    )
+    sim_to_real_gripper = RangeGripperMapper(
+        sim.max_gripper_opening_m, real.max_gripper_opening_m
+    )
 
-Nếu mapping thay đổi, thêm JointMapper mới; không sửa RealToSim, SimToReal hay
-RobotControl.
+    RealToSim(
+        real, sim,
+        target_gripper=sim,
+        mapper=real_to_sim,
+        gripper_mapper=real_to_sim_gripper,
+    ).execute()
+    SimToReal(
+        sim, real,
+        target_gripper=real,
+        gripper_mapper=sim_to_real_gripper,
+    ).execute()
+
+Nếu mapping thay đổi, thêm JointMapper/GripperMapper mới; không sửa RealToSim,
+SimToReal hay RobotControl.
 
 ## Tích hợp pipeline_grasppose
 

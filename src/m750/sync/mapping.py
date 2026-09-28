@@ -44,4 +44,46 @@ class AffineJointMapper(JointMapper):
         )
 
 
-__all__ = ["AffineJointMapper", "IdentityJointMapper", "JointMapper"]
+class GripperMapper(ABC):
+    @abstractmethod
+    def map(self, opening_m: float) -> float:
+        """Convert a source gripper opening into target opening metres."""
+
+
+class IdentityGripperMapper(GripperMapper):
+    def map(self, opening_m: float) -> float:
+        value = float(opening_m)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError("gripper opening must be finite and non-negative")
+        return value
+
+
+class RangeGripperMapper(GripperMapper):
+    """Preserve normalized opening when source/target hardware ranges differ."""
+
+    def __init__(self, source_max_m: float, target_max_m: float) -> None:
+        self._source_max = float(source_max_m)
+        self._target_max = float(target_max_m)
+        if (
+            not math.isfinite(self._source_max)
+            or not math.isfinite(self._target_max)
+            or self._source_max <= 0.0
+            or self._target_max <= 0.0
+        ):
+            raise ValueError("source_max_m and target_max_m must be finite and positive")
+
+    def map(self, opening_m: float) -> float:
+        value = float(opening_m)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError("gripper opening must be finite and non-negative")
+        return value / self._source_max * self._target_max
+
+
+__all__ = [
+    "AffineJointMapper",
+    "GripperMapper",
+    "IdentityGripperMapper",
+    "IdentityJointMapper",
+    "JointMapper",
+    "RangeGripperMapper",
+]

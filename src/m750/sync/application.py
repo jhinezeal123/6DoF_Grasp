@@ -11,7 +11,12 @@ from m750.robot.contracts import (
     RobotStateReader,
 )
 
-from .mapping import IdentityJointMapper, JointMapper
+from .mapping import (
+    GripperMapper,
+    IdentityGripperMapper,
+    IdentityJointMapper,
+    JointMapper,
+)
 
 
 @dataclass(frozen=True)
@@ -30,11 +35,13 @@ class _StateTransfer:
         *,
         target_gripper: Optional[GripperController] = None,
         mapper: Optional[JointMapper] = None,
+        gripper_mapper: Optional[GripperMapper] = None,
     ) -> None:
         self._source = source
         self._target_joints = target_joints
         self._target_gripper = target_gripper
         self._mapper = mapper or IdentityJointMapper()
+        self._gripper_mapper = gripper_mapper or IdentityGripperMapper()
 
     def execute(self, *, copy_gripper: bool = True) -> TransferResult:
         state = self._source.read_state()
@@ -49,7 +56,8 @@ class _StateTransfer:
         if copy_gripper and self._target_gripper is not None:
             opening = state.gripper_opening_m
             if opening is not None:
-                if not self._target_gripper.set_gripper(opening):
+                mapped_opening = self._gripper_mapper.map(opening)
+                if not self._target_gripper.set_gripper(mapped_opening):
                     return TransferResult(
                         False,
                         True,

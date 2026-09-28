@@ -7,6 +7,7 @@ import m750.robot.application as robot_application
 from m750 import (
     AffineJointMapper,
     PowerController,
+    RangeGripperMapper,
     RealToSim,
     RobotControl,
     RobotDriver,
@@ -96,8 +97,14 @@ def test_real_to_sim_uses_injected_mapping():
     ).execute()
 
     assert result.ok
-    assert sim.joints == (0.9, 1.8, 2.7, 0.0, 0.0, 0.0)
+    expected = (0.9, 1.8, 2.7, 0.0, 0.0, 0.0)
+    assert all(abs(a - b) < 1e-12 for a, b in zip(sim.joints, expected))
     assert sim.gripper == 0.02
+
+
+def test_gripper_range_mapping_preserves_normalized_opening():
+    mapper = RangeGripperMapper(source_max_m=0.08, target_max_m=0.069)
+    assert abs(mapper.map(0.04) - 0.0345) < 1e-12
 
 
 def test_sim_to_real_depends_on_same_contract():
