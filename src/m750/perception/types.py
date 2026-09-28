@@ -12,6 +12,10 @@ class PerceptionRequest:
     prompt_id: str
     camera_matrix: Any = None
     fov_x_deg: Optional[float] = None
+    fov_y_deg: Optional[float] = None
+    camera_matrix_size: Any = None
+    max_width_m: float = 0.080
+    top: int = 1
     camera_from_volume: Any = None
 
 

@@ -1,12 +1,9 @@
 """Concrete robot backends.
 
-Import a backend explicitly in the composition root:
+Select a backend only in the composition root.
 
-    from m750.robot.adapters.ros import RosRobotDriver
-    from m750.robot.adapters.mujoco import MujocoRobotDriver
-
-The package intentionally does not import either backend eagerly because ROS
-and MuJoCo are optional runtime dependencies.
+PymycobotRobotDriver controls the real robot through the official Elephant
+Robotics Python API. MujocoRobotDriver controls only simulation state.
 """
 
 __all__ = []

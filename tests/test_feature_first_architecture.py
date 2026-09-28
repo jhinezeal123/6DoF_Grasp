@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import m750
 import m750.robot.application as robot_application
@@ -127,3 +128,20 @@ def test_application_layer_does_not_import_concrete_adapters():
     assert ".adapters" not in source
     assert "m750.ros" not in source
     assert "mujoco" not in source.lower()
+    assert "pymycobot" not in source.lower()
+
+
+def test_new_real_backend_is_pymycobot_not_ros():
+    root = Path(__file__).resolve().parents[1]
+    adapter = (root / "src/m750/robot/adapters/pymycobot.py").read_text()
+    assert "MyArmM750" in adapter
+    assert "m750.ros" not in adapter
+    assert not (root / "src/m750/robot/adapters/ros.py").exists()
+
+
+def test_perception_adapter_is_pinned_to_shared_estimator_commit():
+    root = Path(__file__).resolve().parents[1]
+    adapter = (root / "src/m750/perception/adapters/grasppose.py").read_text()
+    assert "5703506a9d012eaf807387e305cfba4c68d0d6e3" in adapter
+    assert "grasppose.api import get_estimator" in adapter
+    assert "graspgroup" not in adapter

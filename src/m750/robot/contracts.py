@@ -1,8 +1,8 @@
 """Small robot interfaces.
 
-Application code depends on these abstractions. Concrete ROS, serial and
-MuJoCo implementations live in adapters and are selected only by the
-composition root.
+Application code depends only on these abstractions. Concrete pymycobot and
+MuJoCo implementations live in adapters and are selected by the composition
+root.
 """
 
 from __future__ import annotations
@@ -65,15 +65,11 @@ class RobotDriver(
 
 
 class EmergencyStopController(ABC):
-    """Real-controller capability kept out of RobotDriver for ISP/LSP."""
+    """Optional capability for drivers that can stop motion immediately."""
 
     @abstractmethod
     def emergency_stop(self) -> bool:
-        """Latch the controller stop."""
-
-    @abstractmethod
-    def rearm(self) -> bool:
-        """Clear an operator-recoverable stop/fault."""
+        """Stop current motion using the backend native stop command."""
 
 
 class PowerController(ABC):

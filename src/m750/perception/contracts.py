@@ -8,17 +8,11 @@ from .types import PerceptionRequest, PerceptionResult
 
 
 class PerceptionProvider(ABC):
-    @abstractmethod
-    def open(self) -> None:
-        """Load persistent resources."""
+    """Minimal client-specific interface for grasp estimation."""
 
     @abstractmethod
     def infer(self, request: PerceptionRequest) -> PerceptionResult:
         """Return backend-neutral grasp candidates."""
-
-    @abstractmethod
-    def close(self) -> None:
-        """Release persistent resources."""
 
 
 __all__ = ["PerceptionProvider"]
