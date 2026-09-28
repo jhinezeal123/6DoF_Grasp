@@ -27,7 +27,6 @@ src/m750/             # package chính (pip install -e .)
   model/              # URDF + MJCF + scene + meshes (đi theo package)
 apps/                 # (chỗ cho app nhỏ sau này)
 tools/                # joint_check, check_cameras, benchmark_camera
-experiments/vlm/      # thí nghiệm VLM PhysBrain + servo ảnh (P0–P3)
 tests/                # test offline (pytest) + test hardware (chạy tay)
 docs/                 # tài liệu: hardware-m750, bài học octo, recap, plan
 run_web.sh            # khởi động stack ROS 2 + Web UI (server ktmt)
@@ -85,7 +84,6 @@ Server: `ktmt` (Tailscale), repo tại `/workspace/6DoF_Grasp/htc`.
 ## Thí nghiệm (lịch sử)
 
 - `docs/lessons-octo-*.md` — vì sao bỏ hướng Octo VLA (finetune mù ngôn ngữ, policy đóng băng)
-- `experiments/vlm/` — hướng đang dở: PhysBrain + servo ảnh (P0–P3, P3 chưa có kết quả e2e)
 - `docs/plan-vla.md` — chiến lược VLA tiếp theo
 - `docs/recap-ktmt.md` — digital twin MuJoCo (simu/ trên server, ngoài git)
 
