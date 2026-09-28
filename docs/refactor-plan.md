@@ -338,12 +338,16 @@ Repo trở thành đúng nghĩa: **một package Python cài được + apps + e
 > **TRẠNG THÁI THỰC THI (2026-10): ĐÃ LÀM XONG.** Phases 0–3 đã commit (xem git
 > log: docs cuu tai lieu → don kho 175 file → package m750 → experiments/vlm).
 > Điểm khác so với kế hoạch dưới đây (cập nhật thực tế):
-> - Model robot nằm trong package (src/m750/model/) thay vì ssets/ ở root —
+> - Model robot nằm trong package (src/m750/model/) thay vì `assets/` ở root —
 >   để importlib.resources chạy được cả khi pip install.
 > - git lfs migrate KHÔNG chạy (viết lại lịch sử → force-push → 3 clone phải
 >   cài lại; rủi ro cao với server đang chạy). Meshes 61MB vẫn trong git history.
 >   Làm sau khi cần, có phối hợp.
 > - Phase 4 (tách web_control 2.4K dòng) CHƯA làm — cần verify trên robot thật.
 >   Kế hoạch 8 bước giữ nguyên ở §5.
-> - Thêm 	ools/verify_refactor.py: so khớp FK/IK code cũ (git blob) vs mới —
+> - Thêm `tools/verify_refactor.py`: so khớp FK/IK code cũ (git blob b877263) vs mới —
 >   chạy trên server để chứng minh refactor không đổi kết quả tính toán.
+> - ĐÃ cross-check cấu trúc port bằng ast (số thực + toán tử + thứ tự call):
+>   `_fk/_grip/_solve_ik/_wait_stop/_move/ring_views` khớp từng bit; phần
+>   drop-check của `set_gripper_pose` nằm đúng trong `SafetyGate.check_path`
+>   (11 điểm nội suy, min–min). Xác minh số học trên server khi ktmt online lại.
