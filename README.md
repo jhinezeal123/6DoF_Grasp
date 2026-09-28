@@ -1,90 +1,156 @@
 # 6DoF_Grasp — myArm M750
 
-Điều khiển robot tay **myArm M750** (Elephant Robotics) qua 2 đường:
-pymycobot trực tiếp (IK Pinocchio) và stack ROS 2 + Web UI.
-Kèm pipeline VLA (`Source → Policy → Sink`) để gắn model AI vào.
+Điều khiển myArm M750 thật, chạy MuJoCo simulation, đồng bộ real2sim /
+sim2real và gắn perception/VLA qua các interface ổn định.
 
-Trọng tâm hiện tại: **interface điều khiển robot thật, chạy simulator,
-sim-to-real** (thí nghiệm + docs cũ đã dỡ, khôi phục từ git history).
+## Kiến trúc
 
-> Tất cả docstring/comment trong code bằng tiếng Việt không dấu, đậm bài học
-> đo trên robot thật — đọc trước khi đổi logic gì.
+Code mới đi theo feature-first. Application chỉ phụ thuộc abstraction; ROS,
+MuJoCo và model perception nằm ở adapter.
 
-## Cấu trúc
+    src/m750/
+    ├── robot/
+    │   ├── contracts.py          # RobotDriver + các interface nhỏ theo ISP
+    │   ├── types.py              # RobotState, TcpPose
+    │   ├── application.py        # RobotControl, không biết ROS/MuJoCo
+    │   └── adapters/
+    │       ├── ros.py            # RosRobotDriver -> robot thật
+    │       └── mujoco.py         # MujocoRobotDriver -> simulation, không import ROS
+    ├── sync/
+    │   ├── application.py        # RealToSim, SimToReal
+    │   └── mapping.py            # JointMapper; calibration mở rộng bằng policy
+    ├── perception/
+    │   ├── contracts.py          # PerceptionProvider
+    │   ├── types.py              # GraspCandidate, PerceptionResult
+    │   └── adapters/
+    │       └── grasppose.py      # optional adapter cho pipeline_grasppose
+    ├── pipeline/                 # Source -> Policy -> Sink VLA
+    ├── ros/                      # legacy ROS implementation được adapter bọc lại
+    ├── webui/                    # UI hiện tại; migrate dần sang application mới
+    ├── arm.py / control.py       # API direct-pymycobot cũ, giữ compatibility
+    └── model/                    # URDF/MJCF/scene/meshes
 
-```
-src/m750/             # package chính (pip install -e .)
-  spec.py             # RobotSpec: port, baud, FW limits, GRIP_L, URDF — 1 nguồn duy nhất
-  arm.py              # MyArmM750: mở port (check port-held), write_joints (retry)
-  kinematics.py       # ArmKinematics: FK Pinocchio, test offline được
-  ik.py               # IKSolver: IK 6-DOF least_squares + restart
-  control.py          # ArmController: gripper_pose / move_gripper_to / state
-  safety.py           # SafetyGate: giới hạn khớp + drop-check đường đi
-  viewpoints.py       # ring_views: 6 pose GraspNeRF quanh tâm
-  camera.py           # MjpegStream (MJPEG HTTP) + capture (chụp 1 khung)
-  preview.py          # PreviewServer: web xem trước mô phỏng (render MuJoCo)
-  cli.py              # entry points: m750-state / m750-camera / m750-preview
-  pipeline/           # VLA harness: Source → Policy → Sink (xem pipeline/README.md)
-  ros/                # stack ROS 2: bridge, robot, camera (cần rclpy)
-  webui/              # web control đầy đủ (robot thật + fake + camera)
-  model/              # URDF + MJCF + scene + meshes (đi theo package)
-apps/                 # (chỗ cho app nhỏ sau này)
-tools/                # joint_check, check_cameras, benchmark_camera
-tests/                # test offline (pytest) + test hardware (chạy tay)
-run_web.sh            # khởi động stack ROS 2 + Web UI (server ktmt)
-sync.ps1              # đồng bộ local ↔ GitHub ↔ server qua git
-```
+Public interface được expose ở package root:
 
-## Cài đặt (một lần, mỗi máy)
+    from m750 import (
+        RobotDriver,
+        RobotControl,
+        RobotState,
+        TcpPose,
+        RealToSim,
+        SimToReal,
+        PerceptionProvider,
+    )
 
-```bash
-cd 6DoF_Grasp              # repo root (server: /workspace/6DoF_Grasp/htc)
-python -m pip install -e . --no-deps
-```
+Root không import ROS, MuJoCo, OpenCV, pymycobot hay TensorRT. Concrete backend
+chỉ được chọn ở composition root.
 
-Dependencies (quản lý bởi môi trường, không qua pip ở đây):
-`pymycobot`, `pin` (pinocchio), `scipy`, `numpy`, `opencv-python`, `mujoco`,
-ROS 2 stack cần thêm `rclpy` + các msg chuẩn.
+## Real robot và simulation dùng chung application
 
-## Chạy gì
+Robot thật:
+
+    from m750 import RobotControl
+    from m750.robot.adapters.ros import RosRobotDriver
+
+    app = RobotControl(RosRobotDriver())
+    app.move_joints([0, 0, 0, 0, 0, 0])
+
+Simulation chỉ thay driver, application không đổi:
+
+    from m750 import RobotControl
+    from m750.robot.adapters.mujoco import MujocoRobotDriver
+
+    app = RobotControl(MujocoRobotDriver())
+    app.move_joints([0, 0, 0, 0, 0, 0])
+
+MujocoRobotDriver là implementation ngang hàng với RosRobotDriver, không kế
+thừa robot thật và không có đường publish ROS. Điều này tránh vấn đề LSP của
+mô hình cũ FakeRobot(Robot).
+
+## real2sim / sim2real
+
+    import numpy as np
+
+    from m750 import AffineJointMapper, RealToSim, SimToReal
+    from m750.robot.adapters.mujoco import MujocoRobotDriver
+    from m750.robot.adapters.ros import RosRobotDriver
+
+    real = RosRobotDriver()
+    sim = MujocoRobotDriver()
+
+    real_to_sim = AffineJointMapper(
+        offset_rad=tuple(np.radians([-1, 2, 0, 0, 0, 0]))
+    )
+
+    RealToSim(real, sim, target_gripper=sim, mapper=real_to_sim).execute()
+    SimToReal(sim, real, target_gripper=real).execute()
+
+Nếu mapping thay đổi, thêm JointMapper mới; không sửa RealToSim, SimToReal hay
+RobotControl.
+
+## Tích hợp pipeline_grasppose
+
+Repo perception có thể được cài/đưa vào PYTHONPATH riêng. Core application
+không phụ thuộc YOLOE/Lite-Mono/VGN/TensorRT.
+
+    from m750 import PerceptionRequest
+    from m750.perception.adapters.grasppose import GraspPosePerceptionAdapter
+
+    perception = GraspPosePerceptionAdapter()
+    perception.open()
+
+    result = perception.infer(
+        PerceptionRequest(
+            image=rgb,
+            prompt_id="blue_cube",
+            camera_matrix=K,
+        )
+    )
+
+    for grasp in result.grasps:
+        print(grasp.score, grasp.position_m, grasp.quaternion_xyzw, grasp.width_m)
+
+Adapter đọc trực tiếp PipelineResult.grasp.graspgroup của
+jhinezeal123/pipeline_grasppose và chuyển sang GraspCandidate; application
+không biết format 17 phần tử của VGN.
+
+## SOLID áp dụng
+
+- SRP: robot control, synchronization, perception và VLA pipeline là các
+  feature độc lập.
+- OCP: thêm backend mới bằng cách implement RobotDriver; thêm calibration bằng
+  JointMapper; thêm perception bằng PerceptionProvider.
+- LSP: real và sim thực hiện cùng contract. Simulator không subclass robot thật.
+- ISP: power/emergency-stop tách khỏi RobotDriver; simulation không phải
+  implement hành vi phần cứng vô nghĩa.
+- DIP: RobotControl, RealToSim, SimToReal và pipeline adapter chỉ phụ thuộc
+  interface.
+
+## API cũ
+
+Các module cũ vẫn tồn tại để Web UI/CLI hiện tại chạy trong giai đoạn migrate.
+Các import sau vẫn được hỗ trợ lazy:
+
+    from m750 import MyArmM750, ArmController, ArmKinematics, IKSolver
+
+Code mới không nên phụ thuộc trực tiếp m750.ros.robot.Robot hoặc
+m750.webui.fake_robot.FakeRobot.
+
+## Cài đặt và chạy hiện tại
+
+    python -m pip install -e . --no-deps
+
+Dependencies được quản lý bởi môi trường robot: pymycobot, pinocchio, scipy,
+numpy, opencv-python, mujoco; ROS 2 cần thêm rclpy và message packages.
 
 | Việc | Lệnh |
 |---|---|
-| Xem trạng thái tay (6 khớp, gripper, pose URDF) | `m750-state` |
-| Stream MJPEG camera | `m750-camera` (tắt: `touch stop_cam`) |
-| Web xem trước mô phỏng + IK + sync thật | `m750-preview` → http://ip:8081/ |
-| Stack đầy đủ ROS 2 + Web UI (server) | `bash run_web.sh` → http://ip:8080/ |
-| Kiểm tra khớp (P0-A, chạy tay thật) | `python tools/joint_check.py` |
-| Test FK/IK offline (không cần robot) | `python -m pytest tests/test_kinematics.py` |
-| Test pose hardware (đọc, không ra lệnh) | `python tests/test_gripper_pose_hardware.py` |
+| Trạng thái tay | m750-state |
+| Camera MJPEG | m750-camera |
+| Preview | m750-preview |
+| ROS 2 + Web UI | bash run_web.sh |
+| FK/IK offline | python -m pytest tests/test_kinematics.py |
+| Test kiến trúc mới | python -m pytest tests/test_feature_first_architecture.py |
 
-API Python chính:
-
-```python
-from m750 import MyArmM750, ArmKinematics, IKSolver, ArmController
-
-with MyArmM750() as arm:                # port /dev/ttyACM1, chống 2 tiến trình cùng giữ
-    ctrl = ArmController(arm=arm)
-    print(ctrl.gripper_pose())          # [x,y,z mm | rx,ry,rz do] hệ URDF
-    ctrl.move_gripper_to(400, 0, 250)   # IK + drop-check + retry, trả True/False
-    print(ctrl.ring_views(r=150))       # 6 pose GraspNeRF quanh vị trí hiện tại
-```
-
-Quy ước pose (đã kiểm chứng đo thật): mm, Euler XYZ độ, hệ URDF,
-**rpy=[0,0,0] = gripper chúc thẳng XUỐNG**.
-
-## Đồng bộ local ↔ server
-
-```powershell
-.\sync.ps1 status              # so HEAD local vs server
-.\sync.ps1 push "message"      # commit + push GitHub, server pull (ff-only)
-.\sync.ps1 pull                # local pull
-```
-
-Server: `ktmt` (Tailscale), repo tại `/workspace/6DoF_Grasp/htc`.
-
-## Lint
-
-```bash
-ruff check src tests
-```
+Quy ước pose legacy direct-pymycobot vẫn giữ nguyên: mm, Euler XYZ độ, hệ URDF.
+Public TcpPose mới dùng mét và quaternion ROS [qx, qy, qz, qw].
