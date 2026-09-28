@@ -18,8 +18,8 @@ from typing import Any
 
 import numpy as np
 
-from pipeline.interfaces import Policy
-from pipeline.types import Action, ActionSpec, Episode, Observation
+from m750.pipeline.interfaces import Policy
+from m750.pipeline.types import Action, ActionSpec, Episode, Observation
 
 from .physbrain_model import PhysBrainClient
 from .prompts import GRIPPER_QUESTION, point_question

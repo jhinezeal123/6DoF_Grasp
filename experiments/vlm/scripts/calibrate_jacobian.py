@@ -51,13 +51,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-SDK_DIR = Path("/workspace/6DoF_Grasp/htc/SDK")
-sys.path.insert(0, str(SDK_DIR))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # de import vla/
 
-from program.robot.robot import Robot  # noqa: E402
-from program.ros_bridge import get_bridge  # noqa: E402
-import program.ros_bridge as ros_bridge  # noqa: E402
+from m750.ros.robot import Robot  # noqa: E402
+from m750.ros.bridge import get_bridge  # noqa: E402
+import m750.ros.bridge as ros_bridge  # noqa: E402
 
 from vla.physbrain_model import PhysBrainClient, PhysBrainError  # noqa: E402
 from vla.prompts import GRIPPER_QUESTION, POINT_SUFFIX  # noqa: E402

@@ -42,7 +42,7 @@ class PhysBrainError(RuntimeError):
 class PhysBrainClient:
     """Goi llama-server dang chay san.
 
-    Anh truyen vao la RGB (dung quy uoc cua program.camera.Camera). cv2.imencode
+    Anh truyen vao la RGB (dung quy uoc cua m750.ros.camera.Camera). cv2.imencode
     cho BGR, nen phai doi truoc khi ma hoa - doi nham thi do thanh xanh va model
     se chi vao mot vat khac.
     """

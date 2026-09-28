@@ -1,13 +1,13 @@
-"""Camera primary (SPCA2650, /dev/video2) theo dung kieu cua program.camera.Camera.
+"""Camera primary (SPCA2650, /dev/video2) theo dung kieu cua m750.ros.camera.Camera.
 
-Camera trong SDK chi phuc vu /myarm/cameras/cam01/image_raw, ma node
+Camera trong package chi phuc vu /myarm/cameras/cam01/image_raw, ma node
 myarm_camera mo /dev/video0 - do la C925e gan tren co tay. Test 2 can nhin TOAN
 CANH ban lam viec, tuc /dev/video2.
 
 Module nay duck-type dung ba thu ma CameraRobotSource can: photo(), open(),
 close(). Nho vay no cam thang vao adapter co san, khong phai sua pipeline.
 
-QUAN TRONG - thu tu kenh mau: photo() tra RGB, GIONG program.camera.Camera
+QUAN TRONG - thu tu kenh mau: photo() tra RGB, GIONG m750.ros.camera.Camera
 (khung ROS bgr8 duoc dao kenh o _photo_ros). Phia model tu doi sang BGR truoc
 khi ma hoa JPEG. Doi nham o day thi do thanh xanh.
 """

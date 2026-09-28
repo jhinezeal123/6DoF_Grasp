@@ -1,12 +1,15 @@
-"""P3 - Lap rap pipeline gap vat: PhysBrain + servo anh, chay trong khung SDK.
+"""P3 - Lap rap pipeline gap vat: PhysBrain + servo anh, chay trong khung m750.
 
     Source            CameraRobotSource(PrimaryCamera, Robot)     <- adapter co san
     Policy            GraspPointPolicy(model + ImageServo)
     guard             WorkspaceGuard
     Sink              RobotSink                                   <- adapter co san
 
-Khong co harness rieng: Source va Sink la adapter CO SAN cua SDK, chi Policy va
-guard la module moi. Doi model hay doi cach dieu khien chi can thay mot module.
+Khong co harness rieng: Source va Sink la adapter CO SAN cua m750.pipeline, chi
+Policy va guard la module moi. Doi model hay doi cach dieu khien chi can thay
+mot module.
+
+Yeu cau: pip install -e . o repo root (package m750).
 
 Chay:
     python run_pipeline.py --dry-run          # khong ra lenh chuyen dong
@@ -24,18 +27,16 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-SDK_DIR = Path("/workspace/6DoF_Grasp/htc/SDK")
-sys.path.insert(0, str(SDK_DIR))
-sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE))  # chi de import vla/ (goi tu thu muc experiment)
 
-from pipeline.adapters.dry_run import DryRunSink          # noqa: E402
-from pipeline.adapters.sdk_sink import RobotSink          # noqa: E402
-from pipeline.adapters.sdk_source import CameraRobotSource  # noqa: E402
-from pipeline.runner import Pipeline                      # noqa: E402
-from pipeline.types import ActionSpec                     # noqa: E402
+from m750.pipeline.adapters.dry_run import DryRunSink    # noqa: E402
+from m750.pipeline.adapters.sdk_sink import RobotSink    # noqa: E402
+from m750.pipeline.adapters.sdk_source import CameraRobotSource  # noqa: E402
+from m750.pipeline.runner import Pipeline                # noqa: E402
+from m750.pipeline.types import ActionSpec               # noqa: E402
 
-from program.robot.robot import Robot                     # noqa: E402
-from program.ros_bridge import get_bridge                 # noqa: E402
+from m750.ros.robot import Robot                         # noqa: E402
+from m750.ros.bridge import get_bridge                   # noqa: E402
 
 from vla.guard import WorkspaceGuard                      # noqa: E402
 from vla.online_jacobian import OnlineJacobian            # noqa: E402
