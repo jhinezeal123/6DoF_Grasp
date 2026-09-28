@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "m750"
+version = "0.1.0"
+description = "Dieu khien myArm M750: pymycobot truc tiep, IK Pinocchio, camera, pipeline VLA"
+requires-python = ">=3.8"
+# Dependencies KHONG liet ke o day: moi truong robot (Jetson) quan ly rieng
+# (myarm_venv) va pip install -e . phai chay duoc OFFLINE. Danh sach that:
+# pymycobot, pinocchio (pin), scipy, numpy, opencv-python, mujoco - xem README.
+dependencies = []
+
+[project.scripts]
+m750-state = "m750.cli:state_main"
+m750-camera = "m750.cli:camera_main"
+m750-preview = "m750.cli:preview_main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Model robot di theo package (URDF/MJCF/scene/meshes) -> importlib.resources
+# chay duoc tren moi may, ca khi pip install (khong chi checkout).
+"m750.model" = ["*.urdf", "*.xml", "*.yaml", "meshes/mujoco/*.obj"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# E731 lambda, E702 semicolon: phong tac cua code goc (dong chat, compact) - giu nguyen
+# E501: docstring tieng Viet dai + code goc chat dong - khong bo docstring chi de lam lanh dong
+# W293: whitespace trong docstring multi-line
+ignore = ["E731", "E702", "E501", "W293"]
