@@ -4,6 +4,9 @@
 pymycobot trực tiếp (IK Pinocchio) và stack ROS 2 + Web UI.
 Kèm pipeline VLA (`Source → Policy → Sink`) để gắn model AI vào.
 
+Trọng tâm hiện tại: **interface điều khiển robot thật, chạy simulator,
+sim-to-real** (thí nghiệm + docs cũ đã dỡ, khôi phục từ git history).
+
 > Tất cả docstring/comment trong code bằng tiếng Việt không dấu, đậm bài học
 > đo trên robot thật — đọc trước khi đổi logic gì.
 
@@ -28,7 +31,6 @@ src/m750/             # package chính (pip install -e .)
 apps/                 # (chỗ cho app nhỏ sau này)
 tools/                # joint_check, check_cameras, benchmark_camera
 tests/                # test offline (pytest) + test hardware (chạy tay)
-docs/                 # tài liệu: hardware-m750, bài học octo, recap, plan
 run_web.sh            # khởi động stack ROS 2 + Web UI (server ktmt)
 sync.ps1              # đồng bộ local ↔ GitHub ↔ server qua git
 ```
@@ -80,12 +82,6 @@ Quy ước pose (đã kiểm chứng đo thật): mm, Euler XYZ độ, hệ URDF
 ```
 
 Server: `ktmt` (Tailscale), repo tại `/workspace/6DoF_Grasp/htc`.
-
-## Thí nghiệm (lịch sử)
-
-- `docs/lessons-octo-*.md` — vì sao bỏ hướng Octo VLA (finetune mù ngôn ngữ, policy đóng băng)
-- `docs/plan-vla.md` — chiến lược VLA tiếp theo
-- `docs/recap-ktmt.md` — digital twin MuJoCo (simu/ trên server, ngoài git)
 
 ## Lint
 
