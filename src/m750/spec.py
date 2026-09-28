@@ -63,6 +63,7 @@ class RobotSpec:
     fw_max_deg: tuple = FW_MAX_DEG
     margin_deg: float = FW_SAFE_MARGIN_DEG
     grip_l_mm: float = GRIP_L_MM
+    gripper_max_opening_m: float = GRIPPER_MAX_OPENING_M
     # URDF nam trong package (m750/model) -> chay duoc sau pip install -e .
     urdf_path: Path = URDF_PATH
 

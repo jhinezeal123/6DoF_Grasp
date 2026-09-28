@@ -10,7 +10,7 @@ from scipy.spatial.transform import Rotation
 
 from m750.arm import MyArmM750
 from m750.control import ArmController
-from m750.spec import GRIPPER_MAX_OPENING_M, RobotSpec
+from m750.spec import RobotSpec
 
 from ..contracts import EmergencyStopController, PowerController, RobotDriver
 from ..types import JointLimits, RobotState, TcpPose
@@ -67,7 +67,7 @@ class PymycobotRobotDriver(RobotDriver, EmergencyStopController, PowerController
 
     @property
     def max_gripper_opening_m(self) -> float:
-        return float(GRIPPER_MAX_OPENING_M)
+        return float(self.spec.gripper_max_opening_m)
 
     def _gripper_opening(self):
         raw = self.arm.open().get_gripper_value()

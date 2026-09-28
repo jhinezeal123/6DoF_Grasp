@@ -1,7 +1,7 @@
 """Public API for m750.
 
 The root exports stable abstractions and application use cases only. Heavy
-ROS, MuJoCo, OpenCV and pymycobot implementations are imported explicitly from
+MuJoCo, OpenCV and pymycobot implementations are imported explicitly from
 feature adapters by the composition root.
 """
 
