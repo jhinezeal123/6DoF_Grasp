@@ -36,3 +36,7 @@ mujoco_on_kaggle/
 /preview.jpg
 /stop_cam
 /*.png
+
+__pycache__/
+.ruff_cache/
+.pytest_cache/
