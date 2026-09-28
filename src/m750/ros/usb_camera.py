@@ -1,8 +1,9 @@
 """
-camera/usb_camera.py - Camera USB (V4L2) gan truc tiep tren Jetson. Chi de XEM.
+ros/usb_camera.py - Camera USB (V4L2) gan truc tiep tren Jetson. Chi de XEM.
 
-Tach rieng khoi Camera (camera.py) co chu y: Camera lo camera ROS 2 hoac camera
-trong scene MuJoCo, con lop nay lo thiet bi V4L. Khong lien quan gi toi robot.
+Tach rieng khoi Camera (ros/camera.py) co chu y: Camera lo camera ROS 2 hoac
+camera trong scene MuJoCo, con lop nay lo thiet bi V4L. Khong lien quan gi toi
+robot.
 
 Moi camera chay MOT THREAD RIENG de lay khung hinh va nen JPEG. Day khong phai
 toi uu hoa som ma la rang buoc that: cv2.VideoCapture.read() CHAN khi camera bi

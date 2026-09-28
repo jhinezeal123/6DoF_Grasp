@@ -1,5 +1,5 @@
 """
-script/compressor.py - Nén ảnh JPEG hiệu năng cao phục vụ stream mạng.
+m750/media.py - Nén ảnh JPEG hiệu năng cao phục vụ stream mạng.
 """
 import cv2
 import numpy as np

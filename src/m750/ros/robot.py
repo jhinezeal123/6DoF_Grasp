@@ -1,5 +1,5 @@
 """
-robot/robot.py - Lop Robot dai dien cho myArm M750 THAT.
+ros/robot.py - Lop Robot dai dien cho myArm M750 THAT.
 
 Lop nay KHONG dung pymycobot: moi lenh va moi feedback deu di qua stack ROS 2
 (myarm_robot_driver + myarm_kinematics + myarm_motion_execution).
@@ -17,7 +17,7 @@ pymycobot" o ban truoc la sai:
   - Tay kep         : /myarm/gripper/command
   - Vong doi an toan: /myarm/robot/{power_on,power_off,rearm,stop}
 
-Serial va camera la co dinh: xem ros_bridge.py, khong truyen qua tham so.
+Serial va camera la co dinh: xem m750/ros/bridge.py, khong truyen qua tham so.
 
 QUY UOC TAY KEP: `gripper` / MAX_GRIPPER_M nay la do mo TONG giua hai dau ngon
 tay (met, 0..0.08) theo URDF cua stack ROS. SDK cu dung toa do MOT ngon

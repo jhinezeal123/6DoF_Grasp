@@ -4,9 +4,10 @@ Chay tren server (can pinocchio, numpy, scipy):
 
     python tools/verify_refactor.py
 
-Code CU lay tu git (ductocbatdat.py @ backup/pre-refactor), nap bang exec vao
-module rieng. MOI goi m750. Neu moi dong in "KHOP" thi refactor KHONG lam
-doi ket qua tinh toan.
+Code CU lay tu git blob b877263 (commit Phase 0 - ban ductocbatdat.py 769 dong
+CUOI CUNG truoc khi class hoa; backup/pre-refactor la ban 348 dong cu hon, thieu
+_wait_stop/_move/views_6 nen khong dung so duoc). MOI goi m750. Neu moi dong in
+"KHOP" thi refactor KHONG lam doi ket qua tinh toan.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ Q_SETS = [
 def load_old():
     """Load ductocbatdat.py cu tu git blob, exec thanh module (ten m750 clash tranh)."""
     src = subprocess.check_output(
-        ["git", "show", "backup/pre-refactor:ductocbatdat.py"], text=True,
+        ["git", "show", "b877263:ductocbatdat.py"], text=True,
         encoding="utf-8")
     old = types.ModuleType("ductocbatdat_old")
     old.__dict__["__file__"] = "ductocbatdat_old.py"
