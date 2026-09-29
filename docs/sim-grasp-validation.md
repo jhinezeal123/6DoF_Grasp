@@ -32,7 +32,11 @@ Keep the photo private and outside Git. The perception worker is pinned at
     cd /workspace/6DoF_Grasp/grasp_pipeline_repo
     bash scripts/worker.sh start
     cd /workspace/6DoF_Grasp/htc_sim_grasp_validation
-    MUJOCO_GL=egl .venv/bin/python tools/sim_grasp_validation.py       --mode all --socket /workspace/6DoF_Grasp/grasp_pipeline_repo/.runtime/worker.sock       --photo /path/to/private/cam2.jpg
+    MUJOCO_GL=egl .venv/bin/python -m pytest -q
+    MUJOCO_GL=egl .venv/bin/python tools/sim_grasp_validation.py \
+      --mode all \
+      --socket /workspace/6DoF_Grasp/grasp_pipeline_repo/.runtime/worker.sock \
+      --photo /path/to/private/cam2.jpg
 
 Artifacts go under .local_data/sim_grasp_validation/, which Git ignores.
 Each simulation case stores a rendered image, camera matrix, synchronized
@@ -73,3 +77,37 @@ rendered camera image.
 4. If the worker grasp passes IK/path checks but the cube is not lifted, compare
    its predicted pose to the known cube state and inspect finger contact,
    friction, actuator tracking and the lift video.
+
+## Latest KTMT result (2026-09-30)
+
+The run in `.local_data/sim_grasp_validation/report.json` used 6DoF source
+commit `dcacb23417933c85c73b38670d5ec63acd52a69d` and perception worker commit
+`666c7eb608c5315ea252fd02b3f5446c39198ee6`.
+
+- Software checks: 44 passed with `MUJOCO_GL=egl`. Negative checks reject
+  too-wide grasps, worker failure, unreachable IK and swept-path collision
+  before `execute` is called.
+- A, private `cam2.jpg` replay: 3/3 valid worker results; width 33.9 mm.
+  The saved report records no joint state, marks K estimated and does not
+  assert a base-frame grasp.
+- B, geometry oracle: 10/10 grasp-and-lift successes. Each held for 1 second
+  and lifted at least 55.2 mm. Maximum FK difference was below 2 mm/2 degrees;
+  maximum rendered-centre reprojection error was 0.324 px.
+- C, rendered perception to grasp-and-lift: 0/10. The worker found no grasp in
+  four cases (03-06). In the other six, the closest reported candidate position
+  errors per image were 36.1, 37.9, 39.3, 41.7, 83.0 and 92.0 mm. Most candidates
+  failed IK or swept-path checks. In case 08, rank 4 passed those checks but
+  differed from the known top-grasp orientation by 97.6 degrees; the attempt
+  displaced the cube off its pedestal, and the cube fell to the table. This was
+  not a successful grasp.
+- The final scene configuration gave 3/5 detections at the 0.8 light multiplier
+  and 6/10 across both light levels. At 0.8, a 32-degree camera FOV with brighter
+  ambient light, gray table and brighter cube gave 0/5; a darker table and
+  ambient-light trial at 42.2 degrees also gave 0/5. The original configuration
+  was retained because it detected the most cases.
+
+All 20 simulation videos, rendered images, synchronized joint/object states,
+camera matrices, grasps and planning details are saved under
+`.local_data/sim_grasp_validation/`. Result C does not meet the 10/10 gate.
+These results establish neither real-camera calibration nor readiness to grasp
+the object in `cam2.jpg`; the hardware validation gate remains closed.

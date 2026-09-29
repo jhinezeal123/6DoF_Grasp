@@ -155,8 +155,12 @@ def one_case(i,offset,light,mode,p,out):
             "perception":perception,"motion_plan":motion_plan,"video":str(video) if video else None})
         return result
     except Exception as e:
+        try:w.trace_state(force=True)
+        except Exception:pass
+        context.update({"success":False,"error_type":type(e).__name__,"error":str(e),
+            "simulation_trace":getattr(w,"telemetry",[]),
+            "contacts_at_failure":getattr(w,"contact_names",lambda:[])()})
         w.close_video()
-        context.update({"success":False,"error_type":type(e).__name__,"error":str(e)})
         return context
     finally:
         w.close()

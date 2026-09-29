@@ -43,8 +43,8 @@ def test_module_import_does_not_load_hardware_backend():
     assert result.returncode==0,result.stderr
 
 
-@pytest.mark.parametrize("failure",["worker","ik","collision"])
-def test_worker_and_motion_plan_failures_never_execute(monkeypatch,tmp_path,failure):
+@pytest.mark.parametrize("failure",["worker","width","ik","collision"])
+def test_pre_motion_guard_failures_never_execute(monkeypatch,tmp_path,failure):
     import importlib.util
     from types import SimpleNamespace
     from pathlib import Path
@@ -72,6 +72,8 @@ def test_worker_and_motion_plan_failures_never_execute(monkeypatch,tmp_path,fail
         def start_video(self):pass
         def record(self):pass
         def make_plan(self,candidate):
+            if failure=="width":
+                runner.candidate_transform(candidate)
             message="IK found no solution" if failure=="ik" else "swept path contact: table"
             raise runner.ValidationFailure(message)
         def execute(self,plan):
@@ -81,8 +83,8 @@ def test_worker_and_motion_plan_failures_never_execute(monkeypatch,tmp_path,fail
         def close(self):pass
 
     monkeypatch.setattr(runner,"ValidationWorld",FakeWorld)
-    candidate=SimpleNamespace(score=.9,width_m=.025,position_m=(0.,0.,.3),
-                              quaternion_xyzw=(0.,0.,0.,1.),metadata={})
+    candidate=SimpleNamespace(score=.9,width_m=.080 if failure=="width" else .025,
+                              position_m=(0.,0.,.3),quaternion_xyzw=(0.,0.,0.,1.),metadata={})
     def fake_infer(*args,**kwargs):
         if failure=="worker":raise RuntimeError("worker offline")
         raw=SimpleNamespace(detection_count=1,mask_pixels=64)
@@ -95,7 +97,10 @@ def test_worker_and_motion_plan_failures_never_execute(monkeypatch,tmp_path,fail
     if failure=="worker":
         assert result["error"]=="worker offline"
     else:
-        assert result["perception"]["planning_attempts"][0]["result"]=="rejected"
+        attempt=result["perception"]["planning_attempts"][0]
+        assert attempt["result"]=="rejected"
+        if failure=="width":
+            assert "grasp width" in attempt["error"]
 
 
 def test_rendered_cube_center_reprojects_within_two_pixels():
@@ -103,5 +108,12 @@ def test_rendered_cube_center_reprojects_within_two_pixels():
     try:
         world.reset()
         assert world.verify_projection()<=2.
+        initial=world.telemetry[-1]
+        world.step(10,False)
+        current=world.telemetry[-1]
+        assert current["time_s"]>initial["time_s"]
+        assert current["cube_height_m"]==pytest.approx(world.data.xpos[world.cube_body,2])
+        assert len(current["q_rad"])==6
+        assert isinstance(current["contacts"],list)
     finally:
         world.close()

@@ -100,7 +100,7 @@ class ValidationWorld:
         self.model.light_diffuse[light]=np.array([.7,.7,.7])*brightness;self.model.light_ambient[light]=np.array([.15,.15,.15])*brightness
         self.kin=ArmKinematics();self.ik=IKSolver(self.kin,n_restart=6)
         self.renderer=mujoco.Renderer(self.model,height=HEIGHT,width=WIDTH)
-        self.video_path=Path(video_path) if video_path else None;self.video=None;self.frames=0;self.steps=0
+        self.video_path=Path(video_path) if video_path else None;self.video=None;self.frames=0;self.steps=0;self.telemetry=[]
 
     @property
     def K(self):
@@ -109,11 +109,12 @@ class ValidationWorld:
 
     def reset(self,offset=(0.,0.)):
         x,y=CUBE[:2]+np.asarray(offset);self.model.body_pos[self.ped_body]=[x,y,.082]
-        mujoco.mj_resetData(self.model,self.data);self.data.qpos[self.qaddr]=np.radians(CAMERA_Q_DEG)
+        mujoco.mj_resetData(self.model,self.data);self.steps=0;self.telemetry=[]
+        self.data.qpos[self.qaddr]=np.radians(CAMERA_Q_DEG)
         self.data.qpos[self.gq]=.0345;self.data.qpos[self.rgq]=.0345
         self.data.qpos[self.cube_q:self.cube_q+7]=[x,y,CUBE[2],1,0,0,0]
         self.data.ctrl[list(self.acts)]=np.radians(CAMERA_Q_DEG);self.data.ctrl[self.ga]=.0345
-        mujoco.mj_forward(self.model,self.data);self.step(5,False)
+        mujoco.mj_forward(self.model,self.data);self.step(5,False);self.trace_state(force=True)
 
     def camera_pose(self):
         return camera_optical_transform(self.data.cam_xpos[self.cam],self.data.cam_xmat[self.cam].reshape(3,3))
@@ -144,10 +145,15 @@ class ValidationWorld:
     def close(self):
         self.close_video();self.renderer.close()
 
+    def _after_physics_step(self,record_video=True):
+        if self.steps%15==0:
+            self.trace_state()
+            if record_video and self.video is not None:self.record()
+
     def step(self,n,record=True):
         for _ in range(n):
             mujoco.mj_step(self.model,self.data);self.steps+=1
-            if record and self.video is not None and self.steps%15==0:self.record()
+            self._after_physics_step(record)
 
     def tool0(self):
         flange=_id(self.model,mujoco.mjtObj.mjOBJ_BODY,"flange_link");r=self.data.xmat[flange].reshape(3,3);p=self.data.xpos[flange]
@@ -209,6 +215,19 @@ class ValidationWorld:
         return [(int(self.data.contact[i].geom1),int(self.data.contact[i].geom2)) for i in range(self.data.ncon)]
 
     def _name(self,g):return mujoco.mj_id2name(self.model,mujoco.mjtObj.mjOBJ_GEOM,g) or str(g)
+
+    def contact_names(self):
+        return sorted([list(sorted((self._name(a),self._name(b)))) for a,b in set(self._pairs())])
+
+    def trace_state(self,force=False):
+        if not force and self.steps%15:return
+        sample={"time_s":float(self.steps*self.model.opt.timestep),
+            "cube_height_m":float(self.data.xpos[self.cube_body,2]),
+            "q_rad":self.data.qpos[self.qaddr].copy().tolist(),
+            "contacts":self.contact_names()}
+        if self.telemetry and self.telemetry[-1]["time_s"]==sample["time_s"]:
+            self.telemetry[-1]=sample
+        else:self.telemetry.append(sample)
 
     def _body_name(self,g):
         body=int(self.model.geom_bodyid[g])
@@ -293,16 +312,14 @@ class ValidationWorld:
 
     def _checked(self,n,allow_cube):
         for _ in range(n):
-            mujoco.mj_step(self.model,self.data);self.steps+=1
-            if self.video is not None and self.steps%15==0:self.record()
+            mujoco.mj_step(self.model,self.data);self.steps+=1;self._after_physics_step()
             bad=self._bad_contacts(allow_cube)
             if bad:raise ValidationFailure(f"unexpected contact {bad[:4]}")
 
     def _move(self,qdeg,label,allow_cube=False):
         target=np.radians(qdeg);self.data.ctrl[list(self.acts)]=target;stable=0
         for i in range(int(3/self.model.opt.timestep)):
-            mujoco.mj_step(self.model,self.data);self.steps+=1
-            if self.video is not None and self.steps%15==0:self.record()
+            mujoco.mj_step(self.model,self.data);self.steps+=1;self._after_physics_step()
             bad=self._bad_contacts(allow_cube)
             if bad:raise ValidationFailure(f"{label} contact {bad[:4]}")
             e=float(np.max(np.abs(self.data.qpos[self.qaddr]-target)));v=float(np.max(np.abs(self.data.qvel[self.daddr])))
@@ -327,11 +344,11 @@ class ValidationWorld:
         self._checked(int(1/self.model.opt.timestep),True);zh=float(self.data.xpos[self.cube_body,2]);dz=zh-CUBE[2]
         if dz<.050:raise ValidationFailure(f"cube lift {dz*1000:.1f} mm < 50 mm")
         if abs(zh-zl)>.005:raise ValidationFailure("cube fell during 1 second hold")
-        self.record();self.close_video()
+        self.trace_state(force=True);self.record();self.close_video()
         return {"success":True,"q_start_deg":qstart,"moves":moves,"contacts":contacts,
                 "cube_motion_before_close_m":delta,"cube_z_initial_m":float(CUBE[2]),
                 "cube_z_after_lift_m":zl,"cube_z_after_hold_m":zh,"cube_lift_m":dz,
-                "hold_seconds":1.,"video_frames":self.frames}
+                "hold_seconds":1.,"video_frames":self.frames,"simulation_trace":self.telemetry}
 
 def oracle_candidate(position,width=.025):
     r=np.array([[0.,1.,0.],[1.,0.,0.],[0.,0.,-1.]])
