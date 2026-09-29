@@ -83,9 +83,14 @@ rendered camera image.
 
 ## Latest KTMT result (2026-09-30)
 
-The run in `.local_data/sim_grasp_validation/report.json` used 6DoF source
-commit `50cfbdf6afc585ca90a804890c727d1beb7de16a` and perception worker commit
-`666c7eb608c5315ea252fd02b3f5446c39198ee6`.
+The combined report is in `.local_data/sim_grasp_validation/report.json`.
+Oracle B and end-to-end C ran on 6DoF commit
+`50cfbdf6afc585ca90a804890c727d1beb7de16a`; the private `cam2.jpg` replay
+was refreshed on `bb6deceb484d26ad31b3f172b6992a1f1d6225d2` after adding
+explicit scene metadata to the report. That metadata-only change did not change
+simulation physics. Both used perception worker commit
+`666c7eb608c5315ea252fd02b3f5446c39198ee6`. The source image is kept at
+`.local_data/private/cam2.jpg`, which Git ignores.
 
 - Software checks: 44 passed with `MUJOCO_GL=egl`. Negative checks reject
   too-wide grasps, worker failure, unreachable IK and swept-path collision
