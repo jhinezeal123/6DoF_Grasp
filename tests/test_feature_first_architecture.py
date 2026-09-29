@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import inspect
 from pathlib import Path
 
@@ -124,11 +125,16 @@ def test_power_capability_is_not_forced_on_every_robot_driver():
 
 
 def test_application_layer_does_not_import_concrete_adapters():
-    source = inspect.getsource(robot_application)
-    assert ".adapters" not in source
-    assert "m750.ros" not in source
-    assert "mujoco" not in source.lower()
-    assert "pymycobot" not in source.lower()
+    tree = ast.parse(inspect.getsource(robot_application))
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.append(node.module or "")
+            imports.extend(alias.name for alias in node.names)
+    forbidden = ("adapters", "m750.ros", "mujoco", "pymycobot")
+    assert not [name for name in imports if any(word in name.lower() for word in forbidden)]
 
 
 def test_new_real_backend_is_pymycobot_not_ros():

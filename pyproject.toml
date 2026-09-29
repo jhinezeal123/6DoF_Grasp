@@ -28,6 +28,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# This script is run manually against the physical robot.
+addopts = ["--ignore=tests/test_gripper_pose_hardware.py"]
 
 [tool.ruff]
 line-length = 100

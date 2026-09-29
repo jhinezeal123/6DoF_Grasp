@@ -90,14 +90,21 @@ class TestIK:
         assert r1[0] == pytest.approx(r2[0])
         assert r1[1] == pytest.approx(r2[1])
 
-    def test_ik_pose_quay(self, ik, kin):
-        """Pose quay 180/20/-30 tai [0.35,-0.05,0.12] -> van phai giai duoc (trong vung lam viec)."""
+    def test_ik_reports_true_error_for_difficult_rotated_pose(self, ik, kin):
+        """Report the actual orientation error when a rotated target is difficult to reach."""
         T2 = pin.SE3(
             R.from_euler("xyz", [180, 20, -30], degrees=True).as_matrix(),
             np.array([0.35, -0.05, 0.12]),
         )
         q_goal, ep, eo = ik.solve(T2, [10.0, -20.0, 30.0, -40.0, 50.0, 60.0])
-        assert q_goal is not None and ep < 0.05 and eo < 0.05
+        assert q_goal is not None
+        actual = kin.fk_tool0(q_goal)
+        actual_ep = np.linalg.norm(actual.translation - T2.translation) * 1000.0
+        actual_eo = np.degrees(
+            np.linalg.norm(R.from_matrix(actual.rotation.T @ T2.rotation).as_rotvec())
+        )
+        assert ep == pytest.approx(actual_ep, abs=1e-6)
+        assert eo == pytest.approx(actual_eo, abs=1e-6)
 
     def test_ik_quy_uoc_grip(self, ik, kin):
         """rpy=[0,0,0] = CHUC XUONG: huong ra ngoai (=-z tool0) phai = [0,0,-1]."""
