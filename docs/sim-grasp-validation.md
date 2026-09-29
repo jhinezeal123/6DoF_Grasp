@@ -39,7 +39,9 @@ Keep the photo private and outside Git. The perception worker is pinned at
       --photo /path/to/private/cam2.jpg
 
 Artifacts go under .local_data/sim_grasp_validation/, which Git ignores.
-Each simulation case stores a rendered image, synchronized joint/object state,
+The report lists the synthetic cube, pedestal, table and camera mount dimensions,
+visual RGBA, friction values and lighting; it also stores hashes of both XML
+models. Each simulation case stores a rendered image, synchronized joint/object state,
 seed, scene and robot-model hashes, candidate, IK/path results and video.
 During actuator motion, `simulation_trace` samples simulation time, cube height,
 six joint angles and active contacts every 30 ms, including the final state on
