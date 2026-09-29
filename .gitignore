@@ -40,3 +40,6 @@ mujoco_on_kaggle/
 __pycache__/
 .ruff_cache/
 .pytest_cache/
+
+# Private datasets and simulation validation artifacts
+.local_data/

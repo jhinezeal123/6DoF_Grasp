@@ -1,6 +1,6 @@
 """Adapter for the pinned pipeline_grasppose GraspEstimator API.
 
-Target commit: 5703506a9d012eaf807387e305cfba4c68d0d6e3.
+Target commit: 666c7eb608c5315ea252fd02b3f5446c39198ee6.
 The adapter intentionally uses the public GraspEstimator and EstimateResult
 boundary exposed by that commit instead of internal PipelineResult data.
 """
@@ -16,7 +16,7 @@ from ..contracts import PerceptionProvider
 from ..types import GraspCandidate, PerceptionRequest, PerceptionResult
 
 
-GRASPPOSE_COMMIT = "5703506a9d012eaf807387e305cfba4c68d0d6e3"
+GRASPPOSE_COMMIT = "666c7eb608c5315ea252fd02b3f5446c39198ee6"
 
 
 def _matrix_to_quaternion_xyzw(matrix) -> tuple:
