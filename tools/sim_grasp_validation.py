@@ -8,7 +8,7 @@ import cv2,numpy as np
 from m750.perception.adapters.grasppose import GRASPPOSE_COMMIT,GraspPosePerceptionAdapter
 from m750.perception.adapters.grasppose_worker import WorkerGraspEstimator
 from m750.perception.types import PerceptionRequest
-from m750.sim_validation import CAMERA_Q_DEG,CUBE,LIGHTS,OFFSETS,WIDTH,HEIGHT,LIFT_HEIGHT_M,SEED,ValidationFailure,ValidationWorld,candidate_transform,rotation_error_deg
+from m750.sim_validation import CAMERA_Q_DEG,CUBE,LIGHTS,OFFSETS,WIDTH,HEIGHT,LIFT_HEIGHT_M,SCENE,SEED,ValidationFailure,ValidationWorld,candidate_transform,rotation_error_deg
 
 ROOT=Path(__file__).resolve().parents[1];PIPELINE=Path("/workspace/6DoF_Grasp/grasp_pipeline_repo")
 OUTPUT=ROOT/".local_data"/"sim_grasp_validation"
@@ -178,8 +178,8 @@ def main():
     report={"schema_version":1,"mode":args.mode,"sixdof_commit":commit(ROOT),"pipeline_commit":commit(args.pipeline_repo),
         "worker_pin":GRASPPOSE_COMMIT,"worker_prompt_id":"cube","hardware_driver_imported":False,"real_robot_commands_sent":False,
         "seed":SEED,"seed_usage":"FK sample generation; physics episodes are deterministic",
-        "scene_configuration":{"scene_xml":str(ValidationWorld.SCENE),"scene_xml_sha256":digest(ValidationWorld.SCENE),
-            "robot_model_xml_sha256":digest(ValidationWorld.SCENE.parent/"myarm_m750_mujoco.xml"),
+        "scene_configuration":{"scene_xml":str(SCENE),"scene_xml_sha256":digest(SCENE),
+            "robot_model_xml_sha256":digest(SCENE.parent/"myarm_m750_mujoco.xml"),
             "resolution_px":[WIDTH,HEIGHT],"camera_name":"wrist_cam","camera_fovy_deg":42.2,
             "camera_start_joints_deg":CAMERA_Q_DEG.tolist(),"cube_edge_m":.025,
             "cube_center_base_m":CUBE.tolist(),"cube_density_kg_m3":1200,"cube_mass_kg":.01875,
