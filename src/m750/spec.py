@@ -28,6 +28,8 @@ FW_SAFE_MARGIN_DEG = 1.5
 # Huong ra ngoai cua tool la -z (flange o +118, tool0 o 0, dau ngon o +74.5..+99.5).
 # tests/test_gripper_pose.py kiem tra lai hang so nay voi URDF.
 GRIP_L_MM = 87.0
+# Tong do mo hai ngon theo URDF: 2 x 0.0345 m. pymycobot dung 0..100.
+GRIPPER_MAX_OPENING_M = 0.069
 
 JOINT_NAMES = (
     "shoulder_pan_joint",
@@ -61,6 +63,7 @@ class RobotSpec:
     fw_max_deg: tuple = FW_MAX_DEG
     margin_deg: float = FW_SAFE_MARGIN_DEG
     grip_l_mm: float = GRIP_L_MM
+    gripper_max_opening_m: float = GRIPPER_MAX_OPENING_M
     # URDF nam trong package (m750/model) -> chay duoc sau pip install -e .
     urdf_path: Path = URDF_PATH
 
@@ -73,6 +76,7 @@ __all__ = [
     "FW_MAX_DEG",
     "FW_SAFE_MARGIN_DEG",
     "GRIP_L_MM",
+    "GRIPPER_MAX_OPENING_M",
     "JOINT_NAMES",
     "URDF_PATH",
     "RobotSpec",

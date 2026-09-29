@@ -1,9 +1,4 @@
-"""Source dùng Camera và Robot hiện có trong SDK.
-
-Adapter này đọc một snapshot từ cache của Camera và Robot. Với camera ROS cần
-timestamp đồng bộ nghiêm ngặt giữa nhiều sensor, hãy thay bằng Source riêng
-dùng message_filters; pipeline không tự ghép các mẫu ``latest`` khác tuổi.
-"""
+"""Pipeline Source backed by the public robot state abstraction."""
 
 from __future__ import annotations
 
@@ -12,17 +7,19 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from m750.robot import RobotStateReader
+
 from ..interfaces import Source
 from ..types import Episode, Observation
 
 
 class CameraRobotSource(Source):
-    """Đọc ``camera.photo()`` và ``robot.qpos`` thành Observation."""
+    """Read camera frames and a RobotStateReader into one Observation."""
 
     def __init__(
         self,
         camera: Any | Mapping[str, Any],
-        robot: Any,
+        robot: RobotStateReader,
         *,
         max_age_s: float = 1.0,
         camera_name: str = "front",
@@ -46,21 +43,28 @@ class CameraRobotSource(Source):
             images = {}
             for name, camera in self.cameras.items():
                 images[name] = camera.photo()
-            state_value = self.state_reader() if self.state_reader else self.robot.qpos
-            try:
-                state = tuple(float(value) for value in state_value)
-            except (TypeError, ValueError) as exc:
-                raise TimeoutError("Không đọc được trạng thái robot") from exc
-            if state and all(math.isfinite(value) for value in state):
-                self._sequence += 1
-                stamp = time.time_ns()
-                return Observation(
-                    images=images,
-                    state=state,
-                    stamps_ns={name: stamp for name in (*images, "state")},
-                    valid_until=received + self.max_age_s,
-                    sequence=self._sequence,
-                )
+
+            if self.state_reader is not None:
+                state_value = self.state_reader()
+            else:
+                state_value = self.robot.read_state().joints_rad
+
+            if state_value is not None:
+                try:
+                    state = tuple(float(value) for value in state_value)
+                except (TypeError, ValueError) as exc:
+                    raise TimeoutError("Không đọc được trạng thái robot") from exc
+                if state and all(math.isfinite(value) for value in state):
+                    self._sequence += 1
+                    stamp = time.time_ns()
+                    return Observation(
+                        images=images,
+                        state=state,
+                        stamps_ns={name: stamp for name in (*images, "state")},
+                        valid_until=received + self.max_age_s,
+                        sequence=self._sequence,
+                    )
+
             if time.monotonic() >= deadline:
                 raise TimeoutError("Chưa có feedback robot trong read_timeout_s")
             time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
