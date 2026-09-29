@@ -37,7 +37,10 @@ Dependency direction:
     RealToSim / SimToReal --> small robot interfaces
 
     robot application --> PerceptionProvider <-- GraspPosePerceptionAdapter
-                                                <-- GraspEstimator
+                                                <-- WorkerGraspEstimator
+                                                     | Unix socket
+                                                     v
+                                             pipeline_grasppose worker
 
 Public contracts/use-cases được expose ở root. Root không import pymycobot,
 MuJoCo hay TensorRT. Concrete backend chỉ được chọn ở composition root.
@@ -102,7 +105,30 @@ Không dùng ROS2 cho backend thật.
 
 Calibration joint khác nhau thì inject JointMapper khác, không sửa use-case.
 
-## Perception: pin đúng commit
+## Môi trường cho hai repo trên KTMT
+
+Mỗi repo tự quản dependencies của mình. `pipeline_grasppose` tạo `.venv` bằng
+`scripts/prepare.sh` và dùng các gói Torch/CUDA/TensorRT của JetPack. Repo này
+có `environment.yml` riêng cho Python 3.10, NumPy 1.26.4 và Pinocchio 2.7.0.
+Trên Jetson/Linux, tạo Conda environment tại `.venv` của **repo này**:
+
+```bash
+cd /path/to/6DoF_Grasp
+bash scripts/setup-env.sh
+.venv/bin/python -m pytest -q
+```
+
+Script dùng `CONDA_EXE` nếu đã đặt, sau đó tìm `conda` trên `PATH` hoặc tại
+`~/miniforge3/bin/conda`. Nó tạo/cập nhật `.venv` và cài package `m750` ở chế
+độ editable. `.venv` đã nằm trong `.gitignore`. Pytest bỏ qua script kiểm tra
+robot vật lý; các test backend dùng MuJoCo hoặc thiết bị giả.
+
+Môi trường Conda của 6DoF không cần cài Torch/TensorRT hay import package
+`grasppose`. Worker inference chạy trong `.venv` của pipeline và trao đổi với
+6DoF qua Unix socket trên cùng máy. Chỉ dùng cách import pipeline trực tiếp
+khi chủ động chạy cả hai repo trong một Python environment tương thích.
+
+## Perception: worker giữa hai môi trường
 
 Integration target chính xác:
 
@@ -111,37 +137,55 @@ Integration target chính xác:
 
 Không target nhánh main.
 
-Commit này expose public contract GraspEstimator cùng EstimateResult. Adapter
-trong repo này dùng đúng boundary đó, không truy cập PipelineResult/graspgroup
-nội bộ.
+Commit này expose public contract GraspEstimator cùng EstimateResult và worker
+socket. Adapter trong repo này chỉ dùng kết quả grasp công khai, không truy cập
+PipelineResult/graspgroup nội bộ.
 
-Chuẩn bị checkout:
+Chuẩn bị và chạy pipeline trong environment của **pipeline repo**:
 
-    git clone https://github.com/jhinezeal123/pipeline_grasppose.git
-    cd pipeline_grasppose
-    git checkout 5703506a9d012eaf807387e305cfba4c68d0d6e3
-    export PYTHONPATH="$PWD:$PYTHONPATH"
+```bash
+git clone https://github.com/jhinezeal123/pipeline_grasppose.git
+cd pipeline_grasppose
+git checkout 5703506a9d012eaf807387e305cfba4c68d0d6e3
+bash scripts/prepare.sh
+bash scripts/worker.sh start
+```
 
-Sử dụng:
+Worker mặc định tạo socket tại `<pipeline checkout>/.runtime/worker.sock`.
+Đặt đường dẫn tuyệt đối tới socket đó trong process 6DoF:
 
-    from m750 import PerceptionRequest
-    from m750.perception.adapters.grasppose import GraspPosePerceptionAdapter
+```bash
+cd /path/to/6DoF_Grasp
+export GRASP_WORKER_SOCKET=/path/to/pipeline_grasppose/.runtime/worker.sock
+.venv/bin/python your_perception_client.py
+```
 
-    perception = GraspPosePerceptionAdapter()
-    perception.open()
+Composition root của client 6DoF tạo adapter như sau (hai process phải cùng
+máy và có quyền đọc file ảnh tạm):
 
-    result = perception.infer(
-        PerceptionRequest(
-            image=rgb,
-            prompt_id="blue_cube",
-            camera_matrix=K,
-            max_width_m=0.069,
-            top=5,
-        )
+```python
+from m750 import PerceptionRequest
+from m750.perception.adapters.grasppose import GraspPosePerceptionAdapter
+from m750.perception.adapters.grasppose_worker import WorkerGraspEstimator
+
+perception = GraspPosePerceptionAdapter(WorkerGraspEstimator())
+perception.open()  # kiểm tra worker đã sẵn sàng
+
+result = perception.infer(
+    PerceptionRequest(
+        image=rgb,
+        prompt_id="cube",
+        camera_matrix=K,
+        max_width_m=0.069,
+        top=5,
     )
+)
+perception.close()
+```
 
-Có thể inject bất kỳ implementation nào của GraspEstimator, ví dụ
-WorkerGraspEstimator, mà không sửa application robot.
+Client này chỉ gửi ảnh và tham số inference; nó không gửi lệnh robot. Nếu cả hai
+repo được cài trong cùng một environment tương thích, có thể bỏ estimator ở
+constructor để dùng `grasppose.api.get_estimator()` trong cùng process.
 
 ## SOLID
 
@@ -164,14 +208,15 @@ PymycobotRobotDriver/MujocoRobotDriver, sau đó có thể xóa hẳn legacy ROS
 
 ## Cài đặt
 
-    python -m pip install -e . --no-deps
-
-Runtime robot thật: pymycobot, pinocchio, scipy, numpy.
-Simulation: mujoco.
-Perception: checkout pipeline_grasppose đúng commit ở trên.
+Trên KTMT dùng `bash scripts/setup-env.sh` như hướng dẫn ở trên. Manifest
+`environment.yml` khai báo runtime 6DoF (pymycobot, Pinocchio, NumPy, SciPy,
+OpenCV, MuJoCo) và dependencies kiểm thử; pipeline quản lý runtime của nó trong
+repo riêng. GitHub Actions trên x86 dùng extra `.[ci]` trong `pyproject.toml`.
+`pip install -e . --no-deps --no-build-isolation` vẫn dùng được nếu các
+dependencies đã được cài sẵn trong environment tương thích.
 
 Test kiến trúc:
 
-    python -m pytest tests/test_feature_first_architecture.py
+    .venv/bin/python -m pytest tests/test_feature_first_architecture.py
 
 Public TcpPose dùng mét + quaternion [qx, qy, qz, qw].

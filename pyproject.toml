@@ -7,10 +7,21 @@ name = "m750"
 version = "0.2.0"
 description = "Feature-first myArm M750 control: real robot, MuJoCo, sim2real and perception"
 requires-python = ">=3.10"
-# Dependencies KHONG liet ke o day: moi truong robot (Jetson) quan ly rieng
-# va pip install -e . phai chay duoc OFFLINE. Danh sach runtime:
-# pymycobot, pinocchio (pin), scipy, numpy, opencv-python, mujoco - xem README.
+# Base install stays offline-friendly. Jetson dependencies are declared in
+# environment.yml; the pip extra below is for the x86 GitHub CI runner.
 dependencies = []
+
+[project.optional-dependencies]
+ci = [
+    "numpy==1.26.4",
+    "scipy==1.15.2",
+    "pin==2.7.0",
+    "mujoco==3.2.3",
+    "pymycobot==4.0.5",
+    "opencv-python-headless==4.10.0.84",
+    "Pillow==10.4.0",
+    "pytest==9.1.1",
+]
 
 [project.scripts]
 m750-state = "m750.cli:state_main"

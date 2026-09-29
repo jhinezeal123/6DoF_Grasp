@@ -1,0 +1,17 @@
+# Jetson/Linux environment for this repository. Create it at .venv with
+# scripts/setup-env.sh; pipeline_grasppose manages its own JetPack .venv.
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10.21
+  - numpy=1.26.4
+  - scipy=1.15.2
+  - pinocchio=2.7.0
+  - opencv>=4.8,<5
+  - pillow>=10,<13
+  - pytest=9.1.1
+  - setuptools
+  - pip
+  - pip:
+      - mujoco==3.2.3
+      - pymycobot==4.0.5
