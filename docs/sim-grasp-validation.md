@@ -39,10 +39,11 @@ Keep the photo private and outside Git. The perception worker is pinned at
       --photo /path/to/private/cam2.jpg
 
 Artifacts go under .local_data/sim_grasp_validation/, which Git ignores.
-Each simulation case stores a rendered image, camera matrix, synchronized
-joint/object state, seed, scene and robot-model hashes, camera matrix,
-candidate, IK/path results, contacts, cube height and video. The projection
-check compares the projected cube center with the
+Each simulation case stores a rendered image, synchronized joint/object state,
+seed, scene and robot-model hashes, candidate, IK/path results and video.
+During actuator motion, `simulation_trace` samples simulation time, cube height,
+six joint angles and active contacts every 30 ms, including the final state on
+failure. The projection check compares the projected cube center with the
 segmentation-rendered cube pixel centroid.
 
 Modes are photo, oracle, e2e, and all. Oracle candidates come only from the
@@ -81,7 +82,7 @@ rendered camera image.
 ## Latest KTMT result (2026-09-30)
 
 The run in `.local_data/sim_grasp_validation/report.json` used 6DoF source
-commit `dcacb23417933c85c73b38670d5ec63acd52a69d` and perception worker commit
+commit `50cfbdf6afc585ca90a804890c727d1beb7de16a` and perception worker commit
 `666c7eb608c5315ea252fd02b3f5446c39198ee6`.
 
 - Software checks: 44 passed with `MUJOCO_GL=egl`. Negative checks reject
