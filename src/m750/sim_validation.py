@@ -122,6 +122,15 @@ class ValidationWorld:
     def render(self):
         self.renderer.update_scene(self.data,camera=CAMERA);return self.renderer.render().copy()
 
+    def render_depth(self):
+        """Axial camera-Z depth in metres, in the same OpenCV camera frame as K."""
+        self.renderer.enable_depth_rendering()
+        try:
+            self.renderer.update_scene(self.data,camera=CAMERA)
+            return self.renderer.render().copy()
+        finally:
+            self.renderer.disable_depth_rendering()
+
     def save_image(self,path,rgb):
         import cv2
         Path(path).parent.mkdir(parents=True,exist_ok=True);cv2.imwrite(str(path),cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR))

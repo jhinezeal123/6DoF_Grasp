@@ -3,16 +3,21 @@
 from __future__ import annotations
 import argparse,hashlib,json,os,subprocess,sys,time
 from pathlib import Path
+from types import SimpleNamespace
 os.environ.setdefault("MUJOCO_GL","egl")
 import cv2,numpy as np
-from m750.perception.adapters.grasppose import GRASPPOSE_COMMIT,GraspPosePerceptionAdapter
+from m750.perception.adapters.grasppose import GRASPPOSE_COMMIT,GraspPosePerceptionAdapter,_matrix_to_quaternion_xyzw
 from m750.perception.adapters.grasppose_worker import WorkerGraspEstimator
-from m750.perception.types import PerceptionRequest
+from m750.perception.types import GraspCandidate,PerceptionRequest,PerceptionResult
 from m750.sim_validation import CAMERA_Q_DEG,CUBE,LIGHTS,OFFSETS,WIDTH,HEIGHT,LIFT_HEIGHT_M,SCENE,SEED,ValidationFailure,ValidationWorld,candidate_transform,rotation_error_deg
 
 ROOT=Path(__file__).resolve().parents[1];PIPELINE=Path("/workspace/6DoF_Grasp/grasp_pipeline_repo")
 OUTPUT=ROOT/".local_data"/"sim_grasp_validation"
+BRIDGE=ROOT/"tools"/"sim_depth_bridge.py"
 PHOTO_K=np.array([[957.746642,0.,636.883856],[0.,948.820235,352.232764],[0.,0.,1.]])
+# Must match the pipeline's TSDF_SIZE_M; the harness cannot import grasppose.
+VOLUME_SIZE_M=.30
+SETTINGS={"volume":"auto","depth_source":"worker","pipeline":PIPELINE}
 
 def commit(path):
     try:return subprocess.check_output(["git","-C",str(path),"rev-parse","HEAD"],text=True,stderr=subprocess.DEVNULL).strip()
@@ -39,9 +44,52 @@ def provider_for(socket):
     est=WorkerGraspEstimator(socket_path=socket) if socket else WorkerGraspEstimator()
     p=GraspPosePerceptionAdapter(est);p.open();return p
 
-def infer(p,image,k,size):
+def gravity_aligned_volume(T_base_camera,centre_base,size=VOLUME_SIZE_M):
+    """Volume axes aligned with the robot base, i.e. Z pointing up along gravity.
+
+    VGN was trained on gravity-aligned volumes; its own simulator builds the
+    volume with ``Transform(Rotation.identity(), ...)`` and gravity along -Z.
+    """
+    T=np.asarray(T_base_camera,dtype=float).reshape(4,4)
+    rotation=T[:3,:3].T
+    volume=np.eye(4);volume[:3,:3]=rotation
+    volume[:3,3]=rotation@(np.asarray(centre_base,dtype=float).reshape(3)-size/2.-T[:3,3])
+    return volume
+
+def bridge_infer(image,k,camera_from_volume,depth,workdir,pipeline):
+    """Run the pinned pipeline in its own venv with simulator ground-truth depth."""
+    workdir.mkdir(parents=True,exist_ok=True)
+    image_path=workdir/"image.png";depth_path=workdir/"depth.npy"
+    from PIL import Image
+    Image.fromarray(np.asarray(image,dtype=np.uint8)).save(image_path)
+    np.save(depth_path,np.asarray(depth,dtype=np.float32))
+    python=Path(pipeline)/".venv"/"bin"/"python"
+    if not python.is_file():raise ValidationFailure("pipeline virtualenv missing: %s"%python)
+    command=[str(python),str(BRIDGE),"--pipeline-repo",str(pipeline),"--image",str(image_path),
+        "--depth",str(depth_path),"--camera-k",json.dumps(np.asarray(k,dtype=float).reshape(9).tolist()),
+        "--max-width",".069","--top","5"]
+    if camera_from_volume is not None:
+        command+=["--camera-from-volume",json.dumps(np.asarray(camera_from_volume,dtype=float).reshape(16).tolist())]
+    done=subprocess.run(command,capture_output=True,text=True)
+    if done.returncode!=0:
+        raise ValidationFailure("sim depth bridge failed: %s"%(done.stderr.strip()[-400:] or done.stdout.strip()[-400:]))
+    try:payload=json.loads(done.stdout.strip().splitlines()[-1])
+    except (IndexError,ValueError) as e:raise ValidationFailure("sim depth bridge returned no JSON") from e
+    grasps=tuple(GraspCandidate(float(item["score"]),float(item["width_m"]),
+        tuple(float(v) for v in item["translation_m"]),
+        _matrix_to_quaternion_xyzw(item["rotation"]),
+        {"source":"pipeline_grasppose","commit":GRASPPOSE_COMMIT,"depth":"simulator_ground_truth"})
+        for item in payload["grasps"])
+    return PerceptionResult(grasps=grasps,depth_m=payload.get("depth_m"),
+        raw=SimpleNamespace(detection_count=payload.get("detection_count"),
+            mask_pixels=payload.get("mask_pixels"),grasp_count=payload.get("grasp_count")))
+
+def infer(p,image,k,size,camera_from_volume=None,depth=None,workdir=None):
+    if depth is not None:
+        return bridge_infer(image,k,camera_from_volume,depth,workdir,SETTINGS["pipeline"])
     return p.infer(PerceptionRequest(image=image,prompt_id="cube",camera_matrix=k,
-        camera_matrix_size=size,max_width_m=.069,top=5))
+        camera_matrix_size=size,max_width_m=.069,top=5,
+        camera_from_volume=camera_from_volume))
 
 def choose(grasps):
     rejected=[]
@@ -86,6 +134,7 @@ def one_case(i,offset,light,mode,p,out):
             "cube_state_at_capture":cube_at_capture,"fk_check":fk,"reprojection_error_px":reproj})
         if mode=="e2e":
             w.start_video();w.record()
+        executed=None
         if mode=="oracle":
             pos=CUBE.copy();pos[:2]+=np.asarray(offset)
             feasible=[];rejected=[]
@@ -107,11 +156,19 @@ def one_case(i,offset,light,mode,p,out):
                 "candidate":candidate_dict(g),"planned_candidates":[{"jaw_axis_world":axis,"joint_travel_deg":cost}
                 for cost,axis,_,_ in feasible],"rejected_candidates":rejected}
         else:
-            t=time.perf_counter();r=infer(p,rgb,w.K,(WIDTH,HEIGHT));elapsed=(time.perf_counter()-t)*1000
+            volume=(None if SETTINGS["volume"]=="auto" else
+                gravity_aligned_volume(camera,cube_at_capture["position_m"]))
+            depth=(w.render_depth() if SETTINGS["depth_source"]=="sim" else None)
+            t=time.perf_counter()
+            r=infer(p,rgb,w.K,(WIDTH,HEIGHT),camera_from_volume=volume,depth=depth,
+                workdir=out/"bridge"/name)
+            elapsed=(time.perf_counter()-t)*1000
             candidates=sorted(r.grasps,key=lambda x:float(x.score),reverse=True)
             raw=r.raw
             perception={"elapsed_ms":elapsed,"detections":getattr(raw,"detection_count",None),
                 "mask_pixels":getattr(raw,"mask_pixels",None),"candidate_count":len(candidates),
+                "volume_frame":SETTINGS["volume"],"depth_source":SETTINGS["depth_source"],
+                "camera_from_volume":None if volume is None else volume.tolist(),
                 "worker_candidates":[candidate_dict(c) for c in candidates],"planning_attempts":[]}
             context["perception"]=perception
             g=None;plan=None
@@ -128,19 +185,30 @@ def one_case(i,offset,light,mode,p,out):
                             rotation_error_deg(tbg[:3,:3],orientation_x),
                             rotation_error_deg(tbg[:3,:3],orientation_y))}
                     candidate_plan=w.make_plan(candidate)
-                    attempt["result"]="ik_and_path_pass"
-                    perception["planning_attempts"].append(attempt)
-                    g=candidate;plan=candidate_plan
-                    perception["selected_rank"]=rank
-                    perception["selected_candidate"]=candidate_dict(candidate)
-                    perception["selected_simulation_truth_error"]=attempt["simulation_truth_error"]
-                    break
                 except (ValidationFailure,ValueError) as e:
                     attempt.update({"result":"rejected","error":str(e)})
                     perception["planning_attempts"].append(attempt)
+                    continue
+                attempt["result"]="ik_and_path_pass"
+                perception["planning_attempts"].append(attempt)
+                try:
+                    executed=w.execute(candidate_plan)
+                except ValidationFailure as e:
+                    attempt.update({"result":"execution_failed","error":str(e)})
+                    # A failed attempt moves the arm, so restore the scene before
+                    # planning the next-ranked candidate the way a robot would.
+                    w.reset(offset)
+                    continue
+                attempt["execution"]="succeeded"
+                g=candidate;plan=candidate_plan
+                perception["selected_rank"]=rank
+                perception["selected_candidate"]=candidate_dict(candidate)
+                perception["selected_simulation_truth_error"]=attempt["simulation_truth_error"]
+                perception["attempts_used"]=rank
+                break
             if g is None:
                 if not candidates:raise ValidationFailure("worker returned no grasps")
-                raise ValidationFailure("no worker grasp passes IK and swept-path checks")
+                raise ValidationFailure("no worker grasp survives IK, swept-path and execution checks")
         context["perception"]=perception
         motion_plan={"q_pregrasp_path_deg":[list(map(float,q)) for q in plan.q_pre_path],
             "q_approach_path_deg":[list(map(float,q)) for q in plan.q_approach_path],
@@ -148,7 +216,7 @@ def one_case(i,offset,light,mode,p,out):
             "ik_errors":plan.ik_errors,"grasp_base":plan.grasp_base,"requested_lift_m":LIFT_HEIGHT_M,
             "tool_to_grasp":plan.tool_to_grasp,"opening_m":plan.opening_m}
         context["motion_plan"]=motion_plan
-        result=w.execute(plan)
+        result=w.execute(plan) if executed is None else executed
         result.update({"case":name,"mode":mode,"brightness":light,"offset_xy_m":list(offset),"image":str(image),
             "image_sha256":digest(image),"camera_K":w.K.tolist(),"camera_K_size":[WIDTH,HEIGHT],"T_base_camera_cv":camera.tolist(),
             "q_at_capture_rad":q.tolist(),"cube_state_at_capture":cube_at_capture,"fk_check":fk,"reprojection_error_px":reproj,
@@ -175,13 +243,23 @@ def main():
     ap=argparse.ArgumentParser(description="MuJoCo only; this tool has no real-robot mode.")
     ap.add_argument("--mode",choices=("photo","oracle","e2e","all"),default="all")
     ap.add_argument("--photo",type=Path);ap.add_argument("--socket");ap.add_argument("--pipeline-repo",type=Path,default=PIPELINE)
+    ap.add_argument("--volume",choices=("auto","gravity"),default="auto",
+        help="auto keeps the pipeline's camera-aligned TSDF volume; gravity anchors a gravity-aligned volume at the known capture-time object centre")
+    ap.add_argument("--depth-source",choices=("worker","sim"),default="worker",
+        help="sim feeds simulator ground-truth depth through tools/sim_depth_bridge.py")
     ap.add_argument("--output",type=Path,default=OUTPUT);args=ap.parse_args()
+    SETTINGS["volume"]=args.volume;SETTINGS["depth_source"]=args.depth_source;SETTINGS["pipeline"]=args.pipeline_repo
     if args.mode in ("photo","all") and args.photo is None:ap.error("--photo required for photo/all")
     if "m750.robot.adapters.pymycobot" in sys.modules or "m750.ros" in sys.modules:
         raise SystemExit("hardware/ROS module loaded; refusing simulation run")
     report={"schema_version":1,"mode":args.mode,"sixdof_commit":commit(ROOT),"pipeline_commit":commit(args.pipeline_repo),
         "worker_pin":GRASPPOSE_COMMIT,"worker_prompt_id":"cube","hardware_driver_imported":False,"real_robot_commands_sent":False,
         "seed":SEED,"seed_usage":"FK sample generation; physics episodes are deterministic",
+        "validation_options":{"volume_frame":args.volume,"depth_source":args.depth_source,
+            "volume_size_m":VOLUME_SIZE_M,
+            "volume_anchor":("known capture-time object centre (harness ground truth)"
+                if args.volume=="gravity" else "pipeline automatic camera-aligned pose"),
+            "depth_bridge":str(BRIDGE) if args.depth_source=="sim" else None},
         "scene_configuration":{"scene_xml":str(SCENE),"scene_xml_sha256":digest(SCENE),
             "robot_model_xml_sha256":digest(SCENE.parent/"myarm_m750_mujoco.xml"),
             "resolution_px":[WIDTH,HEIGHT],"camera_name":"wrist_cam","camera_fovy_deg":42.2,

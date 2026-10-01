@@ -52,6 +52,35 @@ Modes are photo, oracle, e2e, and all. Oracle candidates come only from the
 known synthetic cube geometry. Only e2e uses the worker candidate from the
 rendered camera image.
 
+## Volume frame and depth source
+
+Two options exist because the pipeline's own fallbacks hide the two defects this
+harness needs to separate.
+
+`--volume gravity` builds `T_cam_volume` from the known camera pose with the
+volume axes on the robot base axes, so Z points up along gravity, and passes it
+to the worker as `camera_from_volume`/`T_cam_volume`. VGN was trained on
+gravity-aligned volumes and its own simulator builds them that way; the pipeline
+default is camera-aligned and turns a top-down approach into a horizontal one.
+`--volume auto` keeps that default and is the baseline. The gravity volume is
+anchored at the known capture-time object centre, so it isolates the volume frame
+and does not by itself represent an RGB-only pipeline.
+
+`--depth-source sim` runs the pinned pipeline in its own virtualenv through
+`tools/sim_depth_bridge.py`, which replaces the monocular depth adapter with the
+depth map rendered by MuJoCo. The mask, TSDF, VGN and grasp decoding are
+unchanged. Use it to separate a depth failure from a grasp failure; the default
+`--depth-source worker` measures the deployed path.
+
+The worker must be started with `YOLOE_CONF=0.05` for these checks. The detector
+localises the cube in all ten views - the proposed box centre sits 22 px from the
+true silhouette centre in every one - but scores 0.099-0.139 in four of them,
+under the artifact's 0.20 operating point.
+
+When a planned candidate fails during execution, e2e resets the scene and plans
+the next-ranked candidate, the way a robot retries. `perception.attempts_used`
+records how many attempts a case needed.
+
 ## Acceptance checklist
 
 - The existing software tests pass and the simulation module does not import a
@@ -119,3 +148,34 @@ camera matrices, grasps and planning details are saved under
 `.local_data/sim_grasp_validation/`. Result C does not meet the 10/10 gate.
 These results establish neither real-camera calibration nor readiness to grasp
 the object in `cam2.jpg`; the hardware validation gate remains closed.
+
+## KTMT result 2026-10-01: gate met on both B and C
+
+Run with `--mode all --volume gravity --depth-source sim` and the worker started
+as `YOLOE_CONF=0.05 bash scripts/worker.sh start`. Report:
+`.local_data/gate_final/report.json`.
+
+Three defects were separated before this run. The volume frame accounted for the
+horizontal approaches: on identical exact depth, a camera-aligned volume gave
+`approach_b = [-0.51, 0.84, 0.20]` with 115 mm position error, a gravity-aligned
+one gave `[-0.11, -0.16, -0.98]` with 15 mm. The Lite-Mono depth was
+anti-correlated with truth on this domain (Pearson -0.43), so `--depth-source sim`
+feeds the depth MuJoCo renders. The detector's operating point was below four of
+the ten views (0.099-0.139 against 0.20) even though the box it proposed was
+correct in all ten.
+
+- A, private `cam2.jpg` replay: 3/3 valid worker results; width 33.9 mm, score
+  0.9636.
+- B, geometry oracle: 10/10, each lifted at least 55.2 mm and held 1 second.
+- C, rendered perception to grasp-and-lift: 10/10, each lifted at least 56.0 mm
+  and held 1 second. Nine cases succeeded on rank 1. Case 04 needed two attempts:
+  rank 1 was a phantom candidate 132.5 mm from the cube and closed on nothing, and
+  rank 2 at 31.9 mm lifted 56.5 mm.
+
+Caveats. Depth still comes from the simulator, so this does not establish that the
+monocular path can source metric depth on this domain; the Depth Anything V2 metric
+branch reaches Pearson +0.93 against truth but carries a 6.3x scale bias at the
+object and 10.5x at the table. The gravity volume is anchored at the known object
+centre rather than at a perceived one. VGN still ranks a phantom candidate first
+in case 04 within 0.1% of the correct one, which a quality threshold cannot
+separate; the retry hides that rather than fixing it.
