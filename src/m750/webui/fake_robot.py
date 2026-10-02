@@ -26,6 +26,7 @@ os.environ.setdefault("MUJOCO_GL", "wgl" if os.name == "nt" else "egl")
 
 import mujoco  # noqa: E402 - phai sau khi dat MUJOCO_GL
 import numpy as np  # noqa: E402
+from scipy.spatial.transform import Rotation  # noqa: E402
 
 from m750.ros.robot import Robot  # noqa: E402
 from m750.ros.bridge import model_rad  # noqa: E402
@@ -95,38 +96,6 @@ class FakeRobot(Robot):
              1.0 - 2.0 * (x * x + y * y)],
         ], dtype=np.float64)
 
-    @staticmethod
-    def _mat_to_quat_xyzw(matrix) -> np.ndarray:
-        """Convert a proper rotation matrix to ROS order [qx, qy, qz, qw]."""
-        m = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
-        trace = float(np.trace(m))
-        if trace > 0.0:
-            s = np.sqrt(trace + 1.0) * 2.0
-            w = 0.25 * s
-            x = (m[2, 1] - m[1, 2]) / s
-            y = (m[0, 2] - m[2, 0]) / s
-            z = (m[1, 0] - m[0, 1]) / s
-        elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
-            s = np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2.0
-            w = (m[2, 1] - m[1, 2]) / s
-            x = 0.25 * s
-            y = (m[0, 1] + m[1, 0]) / s
-            z = (m[0, 2] + m[2, 0]) / s
-        elif m[1, 1] > m[2, 2]:
-            s = np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2.0
-            w = (m[0, 2] - m[2, 0]) / s
-            x = (m[0, 1] + m[1, 0]) / s
-            y = 0.25 * s
-            z = (m[1, 2] + m[2, 1]) / s
-        else:
-            s = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2.0
-            w = (m[1, 0] - m[0, 1]) / s
-            x = (m[0, 2] + m[2, 0]) / s
-            y = (m[1, 2] + m[2, 1]) / s
-            z = 0.25 * s
-        q = np.array([x, y, z, w], dtype=np.float64)
-        return q / np.linalg.norm(q)
-
     def _tool0_pose(self):
         if self.flange_body_id < 0:
             raise RuntimeError("MuJoCo model khong co body flange_link")
@@ -139,7 +108,7 @@ class FakeRobot(Robot):
     def tcp_pose(self):
         """Return the ghost tool0 pose as (position, ROS quaternion)."""
         position, rotation = self._tool0_pose()
-        return position, self._mat_to_quat_xyzw(rotation)
+        return position, Rotation.from_matrix(rotation).as_quat()
 
     @staticmethod
     def _orientation_error(r_current, r_target) -> np.ndarray:
