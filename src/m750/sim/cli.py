@@ -11,7 +11,7 @@ from pathlib import Path
 from ..perception.adapters.grasppose import GRASPPOSE_COMMIT
 from .application import (BRIDGE, PIPELINE, SETTINGS, commit, digest, json_default,
     photo_run, provider_for, save_report, ten_cases)
-from .scenario import CAMERA_Q_DEG, CUBE, HEIGHT, SCENE, SEED, VOLUME_SIZE_M, WIDTH
+from .scenario import CAMERA_Q_DEG, CUBE, CUBE_SIDE_M, HEIGHT, SCENE, SEED, VOLUME_SIZE_M, WIDTH
 
 # src/m750/sim/cli.py -> repository root. Used only for the reported commit and
 # for the default artifact directory.
@@ -45,7 +45,7 @@ def main():
             "camera_local_position_m":[-.04650,0.,.02069],
             "camera_local_quaternion_wxyz":[0.,.7071068,-.7071068,0.],
             "camera_start_joints_deg":CAMERA_Q_DEG.tolist(),
-            "cube_edge_m":.025,"cube_center_base_m":CUBE.tolist(),"cube_density_kg_m3":1200,
+            "cube_edge_m":CUBE_SIDE_M,"cube_center_base_m":CUBE.tolist(),"cube_density_kg_m3":1200,
             "cube_mass_kg":.01875,"cube_visual_rgba":[.08,.22,.85,1.],
             "cube_friction":[1.2,.01,.001],
             "pedestal_center_base_m":[.30,.10,.082],"pedestal_radius_m":.004,
@@ -57,7 +57,7 @@ def main():
             "light_directional":True,"light_diffuse_rgb":[.7,.7,.7],
             "light_ambient_rgb":[.15,.15,.15],"max_gripper_opening_m":.069,
             "excluded_collision_proxy_bodies":[["upper_arm_link","forearm_link"]]},
-        "assumptions":{"cube_edge_m":.025,"density_kg_m3":1200,"mass_kg":.01875,
+        "assumptions":{"cube_edge_m":CUBE_SIDE_M,"density_kg_m3":1200,"mass_kg":.01875,
             "cube_visual_rgba":[.08,.22,.85,1.],"cube_friction":[1.2,.01,.001],
             "pedestal_height_m":.060,"camera_fovy_deg":42.2,
             "camera_local_pose":"MuJoCo model assumption; not real hand-eye calibration",

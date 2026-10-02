@@ -19,17 +19,18 @@ def test_point_7_5_mm_outside_a_face():
     assert e["surface_mm"]==pytest.approx(7.5)
     assert e["depth_mm"]==pytest.approx(7.5)
 
-def test_centre_is_half_the_space_diagonal_away():
+def test_centre_is_one_half_edge_from_the_nearest_face():
+    # The nearest surface point from the centre is a face, 12.5 mm away -- not a
+    # corner, which is the farthest.
     e=cube_grasp_error_mm(pose([0,0,0]),CUBE,IDENTITY,SIDE)
-    assert e["surface_mm"]==pytest.approx(np.sqrt(3)*SIDE/2*1000.)
+    assert e["surface_mm"]==pytest.approx(HALF*1000.)
     assert e["depth_mm"]==pytest.approx(-HALF*1000.)
 
 def test_off_corner_surface_is_euclidean_not_per_axis():
-    # 3 mm past one face and 4 mm past another: 5 mm to the nearest surface point,
-    # but the largest per-axis overshoot is only 4 mm.
+    # 3 mm past one face and 4 mm past another: 5 mm to the nearest surface point.
     e=cube_grasp_error_mm(pose([HALF+.003,HALF+.004,0]),CUBE,IDENTITY,SIDE)
     assert e["surface_mm"]==pytest.approx(5.)
-    assert e["depth_mm"]==pytest.approx(4.)
+    assert e["depth_mm"]==pytest.approx(5.)
 
 def test_identity_quaternion_matches_the_axis_aligned_path():
     aligned=cube_grasp_error_mm(pose([HALF+.0075,.004,-.003]),CUBE,IDENTITY,SIDE)
@@ -45,17 +46,30 @@ def test_rotating_cube_and_point_together_changes_nothing(q):
     assert e["surface_mm"]==pytest.approx(7.5)
     assert e["depth_mm"]==pytest.approx(7.5)
 
-def test_depth_sign_flips_inside_the_cube():
-    outside=cube_grasp_error_mm(pose([HALF+.002,0,0]),CUBE,IDENTITY,SIDE)
-    inside=cube_grasp_error_mm(pose([HALF-.002,0,0]),CUBE,IDENTITY,SIDE)
-    assert outside["depth_mm"]>0>inside["depth_mm"]
-    assert outside["depth_mm"]==pytest.approx(2.)
-    assert inside["depth_mm"]==pytest.approx(-2.)
+def test_signed_distance_is_continuous_across_a_face():
+    # One signed value is the point of this function: 2 mm either side of a face
+    # reads the same magnitude with opposite sign, and nothing jumps at zero.
+    out=cube_grasp_error_mm(pose([HALF+.002,0,0]),CUBE,IDENTITY,SIDE)
+    on =cube_grasp_error_mm(pose([HALF,0,0]),CUBE,IDENTITY,SIDE)
+    ins=cube_grasp_error_mm(pose([HALF-.002,0,0]),CUBE,IDENTITY,SIDE)
+    assert [e["depth_mm"] for e in (out,on,ins)]==pytest.approx([2.,0.,-2.],abs=1e-9)
+    assert [e["surface_mm"] for e in (out,on,ins)]==pytest.approx([2.,0.,2.],abs=1e-9)
+    # And well inside, the nearest face is what is measured, not the far side.
+    deep=cube_grasp_error_mm(pose([0,0,0]),CUBE,IDENTITY,SIDE)
+    assert deep["depth_mm"]==pytest.approx(-HALF*1000.)
 
-def test_inside_point_reads_the_unclamped_overlap_norm():
-    # Documented wart: strictly inside there is no outward surface point, so
-    # surface_mm is the unclamped norm, like the centre case above.
-    e=cube_grasp_error_mm(pose([HALF-.002,0,0]),CUBE,IDENTITY,SIDE)
-    # 2 mm under the +x face and 12.5 mm from each of the other two.
-    assert e["surface_mm"]==pytest.approx(np.linalg.norm([2.,HALF*1000,HALF*1000]))
-    assert e["surface_mm"]>0.
+# The real failure mode this metric was added to expose. A recorded e2e run put
+# the grasp point at these offsets from the cube centre, in whole TSDF voxels
+# (0.30 m / 40), i.e. on the voxel corners and never on a face -- the cube's
+# faces fall between lattice sites. Values are the signed distances that run
+# reported, recomputed here straight from the offsets.
+VOXEL=.30/40
+@pytest.mark.parametrize("voxels,expected_mm",[
+    ((1,0,4),17.5),((-1,0,6),32.5),((0,0,5),25.0),((-2,-1,7),40.08),
+])
+def test_observed_lattice_points_reproduce_the_recorded_distances(voxels,expected_mm):
+    e=cube_grasp_error_mm(pose(np.asarray(voxels,float)*VOXEL),CUBE,IDENTITY,SIDE)
+    assert e["depth_mm"]==pytest.approx(expected_mm,abs=.01)
+    assert e["surface_mm"]==pytest.approx(expected_mm,abs=.01)
+    # Every one of them is outside the cube: the lattice cannot land on a face.
+    assert e["depth_mm"]>0.

@@ -50,25 +50,21 @@ def cube_grasp_error_mm(T_base_grasp,cube_position_m,cube_quaternion_wxyz,side_m
     half-extent ``side_m/2`` to get a per-axis overshoot ``d`` (negative where the
     axis is inside the cube).
 
-    ``surface_mm`` is the distance to the nearest point of the cube surface: the
-    L2 norm of the positive overshoots, i.e. 0 on a face and 7.5 for a point
-    7.5 mm off one, and larger than ``depth_mm`` off a corner. Strictly inside
-    the cube every axis is negative and there is no outward surface point to
-    measure to, so the same norm is taken unclamped; it reads half the space
-    diagonal at the centre and is discontinuous with the outside value at the
-    boundary, so read ``surface_mm`` together with the sign of ``depth_mm``.
+    Both numbers are the standard box signed distance ``sd``, split by sign so a
+    report reads without knowing the convention. ``depth_mm`` is ``sd`` itself:
+    positive outside, where it is the distance to the nearest surface point;
+    negative inside, where it is minus the distance to the nearest face. It is
+    continuous across the surface and exactly 0 on it. ``surface_mm`` is ``sd``
+    without its sign, i.e. how far the point is from the cube's surface either
+    way, so a point 2 mm inside a face and one 2 mm outside both read 2.
 
-    ``depth_mm`` is the largest per-axis overshoot instead: positive outside,
-    where it is the distance past the nearest face *plane* (equal to
-    ``surface_mm`` on a face normal, smaller off a corner), and negative inside,
-    where it is minus the distance to the closest face. A correct surface grasp
-    lands near 0 on both.
+    A correct surface grasp lands near 0 on both.
     """
     p=np.asarray(T_base_grasp,dtype=float).reshape(4,4)[:3,3]-np.asarray(cube_position_m,dtype=float).reshape(3)
     r=Rotation.from_quat(np.asarray(cube_quaternion_wxyz,dtype=float).reshape(4)[[1,2,3,0]]).as_matrix()
     d=np.abs(r.T@p)-side_m/2.
-    surface=np.linalg.norm(np.maximum(d,0.) if (d>=0).any() else d)
-    return {"surface_mm":float(surface*1000),"depth_mm":float(d.max()*1000)}
+    sd=np.linalg.norm(np.maximum(d,0.))+min(d.max(),0.)
+    return {"surface_mm":float(abs(sd)*1000),"depth_mm":float(sd*1000)}
 
 def rotation_error_deg(a,b):
     r=np.asarray(a).reshape(3,3).T@np.asarray(b).reshape(3,3)
