@@ -1,0 +1,32 @@
+<!-- Synthetic grasp validation only. The raised fixture clears the stock 94.4 mm finger collision boxes.
+     Cube dimensions, blue material, 60 mm stand, lighting, camera position, and field of
+     view are simulation assumptions, not measurements of cam2.jpg or the real scene. -->
+<mujoco model="m750_sim_grasp_validation">
+  <include file="myarm_m750_mujoco.xml"/>
+  <visual><global offwidth="1280" offheight="720"/></visual>
+  <worldbody>
+    <light name="validation_light" pos="0.30 -0.20 0.75" dir="0 0 -1" directional="true" diffuse="0.7 0.7 0.7" ambient="0.15 0.15 0.15"/>
+    <body name="validation_table" pos="0.42 0 0">
+      <geom name="validation_table_top" type="box" size="0.26 0.26 0.026"
+            pos="0 0 0.026" rgba="0.12 0.12 0.12 1"
+            friction="0.8 0.01 0.001" density="300"/>
+    </body>
+    <!-- Synthetic 4 mm radius pedestal: cube bottom is 60 mm above table top. -->
+    <body name="validation_pedestal" pos="0.30 0.10 0.082">
+      <geom name="validation_pedestal_geom" type="cylinder" size="0.004 0.030"
+            rgba="0.35 0.35 0.38 1" friction="0.8 0.01 0.001"
+            density="1200"/>
+    </body>
+    <!-- Blue 25 mm cube, 18.75 g at density 1200 kg/m^3. -->
+    <body name="validation_cube" pos="0.30 0.10 0.1245">
+      <freejoint name="validation_cube_free"/>
+      <geom name="validation_cube_geom" type="box" size="0.0125 0.0125 0.0125"
+            rgba="0.08 0.22 0.85 1" friction="1.2 0.01 0.001"
+            density="1200"/>
+    </body>
+  </worldbody>
+  <contact>
+    <!-- Collision proxies for these linked sections overlap at the elbow. -->
+    <exclude body1="upper_arm_link" body2="forearm_link"/>
+  </contact>
+</mujoco>

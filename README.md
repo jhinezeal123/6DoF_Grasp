@@ -25,6 +25,15 @@ pymycobot, MuJoCo và perception nằm ở adapter.
     │   └── adapters/
     │       └── grasppose.py      # pinned GraspEstimator adapter
     ├── pipeline/
+    ├── sim/                      # MuJoCo-only grasp validation, see docs/
+    │   ├── geometry.py           # camera/grasp maths, no MuJoCo import
+    │   ├── scenario.py           # fixed synthetic scene constants
+    │   ├── types.py
+    │   ├── application.py        # validation workflows
+    │   ├── cli.py                # entry point behind tools/sim_grasp_validation.py
+    │   └── adapters/
+    │       ├── mujoco.py         # ValidationWorld
+    │       └── grasppose_bridge.py   # runs under the pipeline virtualenv
     ├── arm.py / control.py       # pymycobot + Pinocchio implementation
     └── model/
 
@@ -133,7 +142,7 @@ khi chủ động chạy cả hai repo trong một Python environment tương th
 Integration target chính xác:
 
     repository: jhinezeal123/pipeline_grasppose
-    commit: 5703506a9d012eaf807387e305cfba4c68d0d6e3
+    commit: 666c7eb608c5315ea252fd02b3f5446c39198ee6
 
 Không target nhánh main.
 
@@ -146,7 +155,7 @@ Chuẩn bị và chạy pipeline trong environment của **pipeline repo**:
 ```bash
 git clone https://github.com/jhinezeal123/pipeline_grasppose.git
 cd pipeline_grasppose
-git checkout 5703506a9d012eaf807387e305cfba4c68d0d6e3
+git checkout 666c7eb608c5315ea252fd02b3f5446c39198ee6
 bash scripts/prepare.sh
 bash scripts/worker.sh start
 ```
@@ -220,3 +229,8 @@ Test kiến trúc:
     .venv/bin/python -m pytest tests/test_feature_first_architecture.py
 
 Public TcpPose dùng mét + quaternion [qx, qy, qz, qw].
+
+
+## Simulation grasp validation
+
+See [docs/sim-grasp-validation.md](docs/sim-grasp-validation.md) for private image replay and the synthetic MuJoCo lift test. Simulation artifacts and local images under `.local_data/` are not committed.
