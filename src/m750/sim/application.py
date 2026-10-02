@@ -12,7 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 os.environ.setdefault("MUJOCO_GL","egl")
 import cv2,numpy as np
-from ..perception.adapters.grasppose import GRASPPOSE_COMMIT,GraspPosePerceptionAdapter,_matrix_to_quaternion_xyzw
+from scipy.spatial.transform import Rotation
+from ..perception.adapters.grasppose import GRASPPOSE_COMMIT,GraspPosePerceptionAdapter
 from ..perception.adapters.grasppose_worker import WorkerGraspEstimator
 from ..perception.types import GraspCandidate,PerceptionRequest,PerceptionResult
 from .adapters.mujoco import ValidationWorld
@@ -81,7 +82,7 @@ def bridge_infer(image,k,camera_from_volume,depth,workdir,pipeline):
             "volume with %r"%(reported,VOLUME_SIZE_M))
     grasps=tuple(GraspCandidate(float(item["score"]),float(item["width_m"]),
         tuple(float(v) for v in item["translation_m"]),
-        _matrix_to_quaternion_xyzw(item["rotation"]),
+        tuple(float(v) for v in Rotation.from_matrix(item["rotation"]).as_quat()),
         {"source":"pipeline_grasppose","commit":GRASPPOSE_COMMIT,"depth":"simulator_ground_truth"})
         for item in payload["grasps"])
     return PerceptionResult(grasps=grasps,depth_m=payload.get("depth_m"),

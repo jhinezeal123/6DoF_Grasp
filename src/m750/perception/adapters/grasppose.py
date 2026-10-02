@@ -7,48 +7,15 @@ boundary exposed by that commit instead of internal PipelineResult data.
 
 from __future__ import annotations
 
-import math
 from typing import Any, Optional
 
-import numpy as np
+from scipy.spatial.transform import Rotation
 
 from ..contracts import PerceptionProvider
 from ..types import GraspCandidate, PerceptionRequest, PerceptionResult
 
 
 GRASPPOSE_COMMIT = "666c7eb608c5315ea252fd02b3f5446c39198ee6"
-
-
-def _matrix_to_quaternion_xyzw(matrix) -> tuple:
-    m = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
-    trace = float(np.trace(m))
-    if trace > 0.0:
-        s = math.sqrt(trace + 1.0) * 2.0
-        w = 0.25 * s
-        x = (m[2, 1] - m[1, 2]) / s
-        y = (m[0, 2] - m[2, 0]) / s
-        z = (m[1, 0] - m[0, 1]) / s
-    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
-        s = math.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2.0
-        w = (m[2, 1] - m[1, 2]) / s
-        x = 0.25 * s
-        y = (m[0, 1] + m[1, 0]) / s
-        z = (m[0, 2] + m[2, 0]) / s
-    elif m[1, 1] > m[2, 2]:
-        s = math.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2.0
-        w = (m[0, 2] - m[2, 0]) / s
-        x = (m[0, 1] + m[1, 0]) / s
-        y = 0.25 * s
-        z = (m[1, 2] + m[2, 1]) / s
-    else:
-        s = math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2.0
-        w = (m[1, 0] - m[0, 1]) / s
-        x = (m[0, 2] + m[2, 0]) / s
-        y = (m[1, 2] + m[2, 1]) / s
-        z = 0.25 * s
-    quaternion = np.asarray([x, y, z, w], dtype=np.float64)
-    quaternion /= np.linalg.norm(quaternion)
-    return tuple(float(value) for value in quaternion)
 
 
 class GraspPosePerceptionAdapter(PerceptionProvider):
@@ -99,7 +66,10 @@ class GraspPosePerceptionAdapter(PerceptionProvider):
                 score=float(grasp.score),
                 width_m=float(grasp.width_m),
                 position_m=tuple(float(value) for value in grasp.translation_m),
-                quaternion_xyzw=_matrix_to_quaternion_xyzw(grasp.rotation),
+                quaternion_xyzw=tuple(
+                    float(value)
+                    for value in Rotation.from_matrix(grasp.rotation).as_quat()
+                ),
                 metadata={
                     "source": "pipeline_grasppose",
                     "commit": GRASPPOSE_COMMIT,
