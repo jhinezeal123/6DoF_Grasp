@@ -41,6 +41,31 @@ def project_camera(p,k):
     if p[2]<=0:raise ValueError("point behind camera")
     return np.array([k[0,0]*p[0]/p[2]+k[0,2],k[1,1]*p[1]/p[2]+k[1,2]])
 
+def cube_grasp_error_mm(T_base_grasp,cube_position_m,cube_quaternion_wxyz,side_m):
+    """Where the predicted grasp point sits relative to the cube, in millimetres.
+
+    The point is the translation of ``T_base_grasp``; it is moved into the cube's
+    own axes with the cube orientation (MuJoCo ``wxyz`` free-joint quaternion), so
+    a rotated cube reads exactly like an axis-aligned one, and compared with the
+    half-extent ``side_m/2`` to get a per-axis overshoot ``d`` (negative where the
+    axis is inside the cube).
+
+    Both numbers are the standard box signed distance ``sd``, split by sign so a
+    report reads without knowing the convention. ``depth_mm`` is ``sd`` itself:
+    positive outside, where it is the distance to the nearest surface point;
+    negative inside, where it is minus the distance to the nearest face. It is
+    continuous across the surface and exactly 0 on it. ``surface_mm`` is ``sd``
+    without its sign, i.e. how far the point is from the cube's surface either
+    way, so a point 2 mm inside a face and one 2 mm outside both read 2.
+
+    A correct surface grasp lands near 0 on both.
+    """
+    p=np.asarray(T_base_grasp,dtype=float).reshape(4,4)[:3,3]-np.asarray(cube_position_m,dtype=float).reshape(3)
+    r=Rotation.from_quat(np.asarray(cube_quaternion_wxyz,dtype=float).reshape(4)[[1,2,3,0]]).as_matrix()
+    d=np.abs(r.T@p)-side_m/2.
+    sd=np.linalg.norm(np.maximum(d,0.))+min(d.max(),0.)
+    return {"surface_mm":float(abs(sd)*1000),"depth_mm":float(sd*1000)}
+
 def rotation_error_deg(a,b):
     r=np.asarray(a).reshape(3,3).T@np.asarray(b).reshape(3,3)
     return float(np.degrees(np.arccos(np.clip((np.trace(r)-1)/2,-1,1))))
@@ -67,6 +92,7 @@ __all__ = [
     "camera_k",
     "camera_optical_transform",
     "candidate_transform",
+    "cube_grasp_error_mm",
     "gravity_aligned_volume",
     "oracle_candidate",
     "project_camera",
