@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 import numpy as np
@@ -36,12 +35,14 @@ def test_zero_quaternion_is_rejected():
         candidate_transform(c)
 
 def test_module_import_does_not_load_hardware_backend():
+    # The GL backend is inherited rather than forced to EGL here: what this test
+    # proves is that importing the MuJoCo world drags in neither the robot driver
+    # nor ROS, and forcing EGL made it fail on every machine without libEGL.
     code=("import sys; import m750.sim.adapters.mujoco; import m750.sim.application; "
           "import m750.sim.cli; "
           "assert 'm750.robot.adapters.pymycobot' not in sys.modules; "
           "assert 'm750.ros' not in sys.modules")
-    result=subprocess.run([sys.executable,"-c",code],capture_output=True,text=True,
-                          env={**os.environ,"MUJOCO_GL":"egl"})
+    result=subprocess.run([sys.executable,"-c",code],capture_output=True,text=True)
     assert result.returncode==0,result.stderr
 
 
