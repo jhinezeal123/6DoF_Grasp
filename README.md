@@ -25,6 +25,15 @@ pymycobot, MuJoCo và perception nằm ở adapter.
     │   └── adapters/
     │       └── grasppose.py      # pinned GraspEstimator adapter
     ├── pipeline/
+    ├── sim/                      # MuJoCo-only grasp validation, see docs/
+    │   ├── geometry.py           # camera/grasp maths, no MuJoCo import
+    │   ├── scenario.py           # fixed synthetic scene constants
+    │   ├── types.py
+    │   ├── application.py        # validation workflows
+    │   ├── cli.py                # entry point behind tools/sim_grasp_validation.py
+    │   └── adapters/
+    │       ├── mujoco.py         # ValidationWorld
+    │       └── grasppose_bridge.py   # runs under the pipeline virtualenv
     ├── arm.py / control.py       # pymycobot + Pinocchio implementation
     └── model/
 

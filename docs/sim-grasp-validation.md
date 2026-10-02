@@ -67,10 +67,10 @@ anchored at the known capture-time object centre, so it isolates the volume fram
 and does not by itself represent an RGB-only pipeline.
 
 `--depth-source sim` runs the pinned pipeline in its own virtualenv through
-`tools/sim_depth_bridge.py`, which replaces the monocular depth adapter with the
-depth map rendered by MuJoCo. The mask, TSDF, VGN and grasp decoding are
-unchanged. Use it to separate a depth failure from a grasp failure; the default
-`--depth-source worker` measures the deployed path.
+`src/m750/sim/adapters/grasppose_bridge.py`, which replaces the monocular depth
+adapter with the depth map rendered by MuJoCo. The mask, TSDF, VGN and grasp
+decoding are unchanged. Use it to separate a depth failure from a grasp failure;
+the default `--depth-source worker` measures the deployed path.
 
 The worker must be started with `YOLOE_CONF=0.05` for these checks. The detector
 localises the cube in all ten views - the proposed box centre sits 22 px from the

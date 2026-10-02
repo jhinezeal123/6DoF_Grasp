@@ -160,9 +160,14 @@ def test_simulation_harness_stays_out_of_the_public_facade():
     client, which is why the root facade must not re-export it.
     """
     root = Path(__file__).resolve().parents[1]
-    facade = (root / "src/m750/__init__.py").read_text()
-    assert "sim_validation" not in facade
+    facade_path = root / "src/m750/__init__.py"
+    facade = facade_path.read_text()
     assert "mujoco" not in facade
+    imported = _imported_names(facade_path)
+    assert not [
+        name for name in imported
+        if name in ("sim", "m750.sim") or name.startswith(("sim.", "m750.sim."))
+    ], imported
 
 
 def _imported_names(path):
@@ -185,7 +190,7 @@ def test_simulation_harness_cannot_reach_the_real_robot_backend():
     """
     root = Path(__file__).resolve().parents[1]
     sources = sorted((root / "tools").glob("*.py"))
-    sources += sorted((root / "src/m750").glob("sim_*.py"))
+    sources += sorted((root / "src/m750/sim").rglob("*.py"))
     assert sources, "harness sources not found"
     for path in sources:
         imports = _imported_names(path)
@@ -204,7 +209,7 @@ def test_depth_bridge_depends_on_the_port_not_a_concrete_adapter():
     only on the port and the composition seam is what stops that recurring.
     """
     root = Path(__file__).resolve().parents[1]
-    path = root / "tools/sim_depth_bridge.py"
+    path = root / "src/m750/sim/adapters/grasppose_bridge.py"
     imports = _imported_names(path)
     assert "grasppose.modules.depth.port" in imports
     assert "DepthPort" in imports
@@ -212,6 +217,10 @@ def test_depth_bridge_depends_on_the_port_not_a_concrete_adapter():
     assert "build_default_pipeline" in imports
     for adapter in ("lite_mono", "da3_metric", "LiteMono", "Da3Metric"):
         assert not [name for name in imports if adapter in name], adapter
+
+    # The bridge is launched by the pipeline's own interpreter, which has no m750
+    # installed. Living inside the package must not tempt it into importing one.
+    assert not [name for name in imports if name.startswith("m750")], imports
 
     # The seam has to be called with the depth port, not merely imported.
     calls = [
@@ -229,6 +238,6 @@ def test_depth_bridge_depends_on_the_port_not_a_concrete_adapter():
 def test_harness_rejects_a_bridge_that_ignored_the_depth_map():
     """A bridge that quietly stops substituting must fail, not report success."""
     root = Path(__file__).resolve().parents[1]
-    runner = (root / "tools/sim_grasp_validation.py").read_text()
+    runner = (root / "src/m750/sim/application.py").read_text()
     assert "depth_port_calls" in runner
     assert "tsdf_size_m" in runner

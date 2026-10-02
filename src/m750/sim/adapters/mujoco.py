@@ -1,73 +1,25 @@
-"""MuJoCo-only grasp validation. This module never constructs a physical robot driver."""
+"""MuJoCo implementation of the validation world.
+
+This module never constructs a physical robot driver: it reaches only for the
+MuJoCo model, the kinematic solver and the camera geometry.
+"""
+
 from __future__ import annotations
+
 import os
 os.environ.setdefault("MUJOCO_GL","egl")
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 import mujoco, numpy as np, pinocchio as pin
 from scipy.spatial.transform import Rotation
-from .ik import IKSolver
-from .kinematics import ArmKinematics
-from .perception.types import GraspCandidate
+from ...ik import IKSolver
+from ...kinematics import ArmKinematics
+from ...perception.types import GraspCandidate
+from ..geometry import (camera_optical_transform, candidate_transform,
+    project_camera, rotation_error_deg, tf)
+from ..scenario import (ACTUATORS, CAMERA, CAMERA_Q_DEG, CUBE, FOVY, HEIGHT,
+    JOINT_NAMES, LIFT_HEIGHT_M, MAX_OPEN, SCENE, SEED, WIDTH)
+from ..types import MotionPlan, ValidationFailure
 
-JOINT_NAMES=("shoulder_pan_joint","shoulder_lift_joint","elbow_flex_joint","forearm_roll_joint","wrist_flex_joint","wrist_roll_joint")
-ACTUATORS=("pos_j1","pos_j2","pos_j3","pos_j4","pos_j5","pos_j6")
-CAMERA="wrist_cam"
-CUBE=np.array([.30,.10,.1245])
-OFFSETS=((0.,0.),(.02,0.),(-.02,0.),(0.,.02),(0.,-.02))
-LIGHTS=(.8,1.2)
-CAMERA_Q_DEG=np.array([-37.66,-64.89,41.76,37.34,88.57,129.87])
-FOVY=42.2
-WIDTH,HEIGHT=1280,720
-MAX_OPEN=.069
-LIFT_HEIGHT_M=.065
-SEED=20260930
-SCENE=Path(__file__).resolve().parent/"model"/"scene_grasp_validation.xml"
-MJ_TO_CV=np.diag([1.,-1.,-1.])
-
-class ValidationFailure(RuntimeError): pass
-
-@dataclass(frozen=True)
-class MotionPlan:
-    q_pre_path: tuple
-    q_approach_path: tuple
-    q_lift_path: tuple
-    ik_errors: tuple
-    grasp_base: tuple
-    tool_to_grasp: tuple
-    opening_m: float
-
-def tf(r,p):
-    m=np.eye(4);m[:3,:3]=np.asarray(r).reshape(3,3);m[:3,3]=np.asarray(p).reshape(3);return m
-
-def camera_optical_transform(position_world,rotation_world_mj):
-    return tf(np.asarray(rotation_world_mj).reshape(3,3)@MJ_TO_CV,position_world)
-
-def candidate_transform(c):
-    try:p=np.asarray(c.position_m,dtype=float).reshape(3);q=np.asarray(c.quaternion_xyzw,dtype=float).reshape(4);w=float(c.width_m);s=float(c.score)
-    except (AttributeError,TypeError,ValueError) as e:raise ValidationFailure("invalid grasp candidate") from e
-    if not np.all(np.isfinite(p)) or not np.all(np.isfinite(q)) or not np.isfinite(s):raise ValidationFailure("non-finite grasp values")
-    if not np.isfinite(w) or not 0.<w<=MAX_OPEN:raise ValidationFailure(f"grasp width {w!r} outside (0, 0.069]")
-    n=np.linalg.norm(q)
-    if n<1e-8:raise ValidationFailure("zero-norm grasp quaternion")
-    r=Rotation.from_quat(q/n).as_matrix()
-    if not np.allclose(r.T@r,np.eye(3),atol=1e-6) or abs(np.linalg.det(r)-1)>1e-6:raise ValidationFailure("invalid grasp rotation")
-    return tf(r,p)
-
-def camera_k(width=WIDTH,height=HEIGHT,fovy=FOVY):
-    if width<=0 or height<=0 or not 0<fovy<180:raise ValueError("invalid camera")
-    f=height/(2*np.tan(np.radians(fovy)/2))
-    return np.array([[f,0,width/2],[0,f,height/2],[0,0,1.]])
-
-def project_camera(p,k):
-    p=np.asarray(p,dtype=float).reshape(3);k=np.asarray(k).reshape(3,3)
-    if p[2]<=0:raise ValueError("point behind camera")
-    return np.array([k[0,0]*p[0]/p[2]+k[0,2],k[1,1]*p[1]/p[2]+k[1,2]])
-
-def rotation_error_deg(a,b):
-    r=np.asarray(a).reshape(3,3).T@np.asarray(b).reshape(3,3)
-    return float(np.degrees(np.arccos(np.clip((np.trace(r)-1)/2,-1,1))))
 
 def _id(m,kind,name):
     i=mujoco.mj_name2id(m,kind,name)
@@ -359,7 +311,5 @@ class ValidationWorld:
                 "cube_z_after_lift_m":zl,"cube_z_after_hold_m":zh,"cube_lift_m":dz,
                 "hold_seconds":1.,"video_frames":self.frames,"simulation_trace":self.telemetry}
 
-def oracle_candidate(position,width=.025):
-    r=np.array([[0.,1.,0.],[1.,0.,0.],[0.,0.,-1.]])
-    q=Rotation.from_matrix(r).as_quat()
-    return GraspCandidate(1.,width,tuple(np.asarray(position,dtype=float)),tuple(q),{"source":"simulation_ground_truth"})
+
+__all__ = ["ValidationWorld"]

@@ -4,7 +4,8 @@ import sys
 import numpy as np
 import pytest
 from m750.perception.types import GraspCandidate
-from m750.sim_validation import ValidationFailure,ValidationWorld,camera_k,camera_optical_transform,candidate_transform,oracle_candidate,project_camera
+from m750.sim import ValidationFailure,camera_k,camera_optical_transform,candidate_transform,oracle_candidate,project_camera
+from m750.sim.adapters.mujoco import ValidationWorld
 
 def test_camera_axes_convert_to_right_handed_cv_optical():
     t=camera_optical_transform([1,2,3],np.eye(3))
@@ -35,7 +36,8 @@ def test_zero_quaternion_is_rejected():
         candidate_transform(c)
 
 def test_module_import_does_not_load_hardware_backend():
-    code=("import sys; import m750.sim_validation; "
+    code=("import sys; import m750.sim.adapters.mujoco; import m750.sim.application; "
+          "import m750.sim.cli; "
           "assert 'm750.robot.adapters.pymycobot' not in sys.modules; "
           "assert 'm750.ros' not in sys.modules")
     result=subprocess.run([sys.executable,"-c",code],capture_output=True,text=True,
@@ -45,14 +47,10 @@ def test_module_import_does_not_load_hardware_backend():
 
 @pytest.mark.parametrize("failure",["worker","width","ik","collision"])
 def test_pre_motion_guard_failures_never_execute(monkeypatch,tmp_path,failure):
-    import importlib.util
     from types import SimpleNamespace
     from pathlib import Path
 
-    runner_path=Path(__file__).resolve().parents[1]/"tools"/"sim_grasp_validation.py"
-    spec=importlib.util.spec_from_file_location("sim_grasp_validation_runner",runner_path)
-    runner=importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(runner)
+    import m750.sim.application as runner
 
     class FakeWorld:
         last=None

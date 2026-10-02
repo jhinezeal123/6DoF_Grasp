@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Run the pinned grasp pipeline with a supplied metric depth map.
 
-This is a validation-only bridge. It runs inside the pipeline checkout's own
-environment (JetPack Torch/TensorRT) and substitutes a depth map rendered by the
+This is a validation-only bridge. It runs under the *pipeline* checkout's own
+interpreter (JetPack Torch/TensorRT) and substitutes a depth map rendered by the
 simulator, so the rest of the pipeline (YOLOE mask, TSDF, VGN, grasp decoding) is
 exercised unchanged.
+
+It is a program, not a module: the harness launches it by absolute path and it
+must never import m750, because that interpreter does not have this package.
 
 The substitution goes through the pipeline's declared seam: ``DepthPort`` is the
 contract, and ``build_default_pipeline(depth=...)`` is the composition root that
