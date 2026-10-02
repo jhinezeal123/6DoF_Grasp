@@ -13,6 +13,7 @@ from .geometry import (
     camera_k,
     camera_optical_transform,
     candidate_transform,
+    cube_grasp_error_mm,
     gravity_aligned_volume,
     oracle_candidate,
     project_camera,
@@ -22,6 +23,7 @@ from .geometry import (
 from .scenario import (
     CAMERA_Q_DEG,
     CUBE,
+    CUBE_SIDE_M,
     FOVY,
     HEIGHT,
     LIFT_HEIGHT_M,
@@ -38,6 +40,7 @@ from .types import MotionPlan, ValidationFailure
 __all__ = [
     "CAMERA_Q_DEG",
     "CUBE",
+    "CUBE_SIDE_M",
     "FOVY",
     "HEIGHT",
     "LIFT_HEIGHT_M",
@@ -53,6 +56,7 @@ __all__ = [
     "camera_k",
     "camera_optical_transform",
     "candidate_transform",
+    "cube_grasp_error_mm",
     "gravity_aligned_volume",
     "oracle_candidate",
     "project_camera",

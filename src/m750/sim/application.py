@@ -17,8 +17,8 @@ from ..perception.adapters.grasppose import GRASPPOSE_COMMIT,GraspPosePerception
 from ..perception.adapters.grasppose_worker import WorkerGraspEstimator
 from ..perception.types import GraspCandidate,PerceptionRequest,PerceptionResult
 from .adapters.mujoco import ValidationWorld
-from .geometry import candidate_transform,gravity_aligned_volume,rotation_error_deg
-from .scenario import CUBE,HEIGHT,LIFT_HEIGHT_M,LIGHTS,OFFSETS,VOLUME_SIZE_M,WIDTH
+from .geometry import candidate_transform,cube_grasp_error_mm,gravity_aligned_volume,rotation_error_deg
+from .scenario import CUBE,CUBE_SIDE_M,HEIGHT,LIFT_HEIGHT_M,LIGHTS,OFFSETS,VOLUME_SIZE_M,WIDTH
 from .types import ValidationFailure
 
 PIPELINE=Path("/workspace/6DoF_Grasp/grasp_pipeline_repo")
@@ -186,6 +186,7 @@ def one_case(i,offset,light,mode,p,out):
                     orientation_y=np.array([[-1.,0.,0.],[0.,1.,0.],[0.,0.,-1.]])
                     attempt["simulation_truth_error"]={
                         "position_mm":float(np.linalg.norm(tbg[:3,3]-cube_pos)*1000),
+                        **cube_grasp_error_mm(tbg,cube_pos,cube_at_capture["quaternion_wxyz"],CUBE_SIDE_M),
                         "rotation_to_nearest_top_grasp_deg":min(
                             rotation_error_deg(tbg[:3,:3],orientation_x),
                             rotation_error_deg(tbg[:3,:3],orientation_y))}

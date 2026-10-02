@@ -24,6 +24,9 @@ from ..spec import JOINT_NAMES, model_dir
 ACTUATORS=("pos_j1","pos_j2","pos_j3","pos_j4","pos_j5","pos_j6")
 CAMERA="wrist_cam"
 CUBE=np.array([.30,.10,.1245])
+# scene_grasp_validation.xml validation_cube_geom is a box with half-extents
+# 0.0125, so the edge is 25 mm (18.75 g at that geom's 1200 kg/m^3 density).
+CUBE_SIDE_M=.025
 OFFSETS=((0.,0.),(.02,0.),(-.02,0.),(0.,.02),(0.,-.02))
 LIGHTS=(.8,1.2)
 CAMERA_Q_DEG=np.array([-37.66,-64.89,41.76,37.34,88.57,129.87])
@@ -45,6 +48,7 @@ __all__ = [
     "CAMERA",
     "CAMERA_Q_DEG",
     "CUBE",
+    "CUBE_SIDE_M",
     "FOVY",
     "HEIGHT",
     "JOINT_NAMES",
