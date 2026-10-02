@@ -19,9 +19,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..spec import model_dir
+from ..spec import JOINT_NAMES, model_dir
 
-JOINT_NAMES=("shoulder_pan_joint","shoulder_lift_joint","elbow_flex_joint","forearm_roll_joint","wrist_flex_joint","wrist_roll_joint")
 ACTUATORS=("pos_j1","pos_j2","pos_j3","pos_j4","pos_j5","pos_j6")
 CAMERA="wrist_cam"
 CUBE=np.array([.30,.10,.1245])

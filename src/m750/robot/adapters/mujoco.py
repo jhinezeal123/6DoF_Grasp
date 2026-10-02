@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 import mujoco
 import numpy as np
 
-from m750.spec import JOINT_NAMES, model_dir
+from m750.spec import JOINT_NAMES, TOOL0_OFFSET_M, TOOL0_ROTATION, model_dir
 
 from ..contracts import RobotDriver
 from ..types import JointLimits, RobotState, TcpPose
@@ -35,15 +35,8 @@ class MujocoRobotDriver(RobotDriver):
     publisher, serial port or real-robot facade is reachable from this class.
     """
 
-    _TOOL0_OFFSET = np.array([0.118, 0.0, 0.0], dtype=np.float64)
-    _TOOL0_ROT = np.array(
-        [
-            [0.0, 0.0, -1.0],
-            [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0],
-        ],
-        dtype=np.float64,
-    )
+    _TOOL0_OFFSET = np.array(TOOL0_OFFSET_M, dtype=np.float64)
+    _TOOL0_ROT = np.array(TOOL0_ROTATION, dtype=np.float64)
 
     def __init__(self, scene_path: Optional[str] = None) -> None:
         self.scene_path = os.path.abspath(scene_path or DEFAULT_SCENE)

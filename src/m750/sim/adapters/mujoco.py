@@ -14,11 +14,16 @@ from scipy.spatial.transform import Rotation
 from ...ik import IKSolver
 from ...kinematics import ArmKinematics
 from ...perception.types import GraspCandidate
+from ...spec import TOOL0_OFFSET_M, TOOL0_ROTATION
 from ..geometry import (camera_optical_transform, candidate_transform,
     project_camera, rotation_error_deg, tf)
 from ..scenario import (ACTUATORS, CAMERA, CAMERA_Q_DEG, CUBE, FOVY, HEIGHT,
     JOINT_NAMES, LIFT_HEIGHT_M, MAX_OPEN, SCENE, SEED, WIDTH)
 from ..types import MotionPlan, ValidationFailure
+
+# spec.py keeps these as plain tuples so a minimal install can import it; the
+# offsets themselves are shared with robot/adapters/mujoco.py.
+TOOL0_OFFSET=np.array(TOOL0_OFFSET_M,float);TOOL0_ROT=np.array(TOOL0_ROTATION,float)
 
 
 def _id(m,kind,name):
@@ -118,8 +123,8 @@ class ValidationWorld:
 
     def tool0(self):
         flange=_id(self.model,mujoco.mjtObj.mjOBJ_BODY,"flange_link");r=self.data.xmat[flange].reshape(3,3);p=self.data.xpos[flange]
-        rt=r@np.array([[0,0,-1],[0,1,0],[1,0,0]],float)
-        return tf(rt,p+r@np.array([.118,0,0]))
+        rt=r@TOOL0_ROT
+        return tf(rt,p+r@TOOL0_OFFSET)
 
     def tool_to_grasp(self):
         saved=self.data.qpos.copy();self.data.qpos[self.qaddr]=0.;self.data.qpos[self.gq]=self.data.qpos[self.rgq]=.0345;mujoco.mj_forward(self.model,self.data)

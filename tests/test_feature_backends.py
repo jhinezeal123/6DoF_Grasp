@@ -11,6 +11,41 @@ from m750.robot.adapters.mujoco import MujocoRobotDriver
 from m750.robot.adapters.pymycobot import PymycobotRobotDriver
 
 
+def test_both_mujoco_backends_agree_on_the_tool0_frame():
+    """The driver and the validation harness must share one tool0 calibration.
+
+    They are independent code paths over the same robot model: robot.adapters
+    builds the tool0 frame to command the arm, sim.adapters builds it to place a
+    grasp. While each kept its own copy of the 118 mm offset and the flange
+    rotation, changing one silently left the other with a stale idea of where the
+    tool is, and only a physical run would show it.
+    """
+    import mujoco
+    from scipy.spatial.transform import Rotation
+
+    from m750.sim.adapters.mujoco import ValidationWorld
+
+    joints = (0.1, -0.2, 0.3, -0.1, 0.2, -0.3)
+    driver = MujocoRobotDriver()
+    world = ValidationWorld()
+    try:
+        assert driver.move_joints(joints)
+        world.data.qpos[world.qaddr] = joints
+        mujoco.mj_forward(world.model, world.data)
+
+        pose = driver.read_state().tcp_pose
+        tool = world.tool0()
+
+        assert np.allclose(tool[:3, 3], pose.position_m, atol=1e-9)
+        quaternion = Rotation.from_matrix(tool[:3, :3]).as_quat()
+        # q and -q are the same rotation, so compare the axis, not the sign.
+        assert abs(float(np.dot(quaternion, pose.quaternion_xyzw))) == pytest.approx(
+            1.0, abs=1e-9)
+    finally:
+        world.close()
+        driver.close()
+
+
 def test_mujoco_driver_executes_robot_control_without_hardware():
     driver = MujocoRobotDriver()
     try:
