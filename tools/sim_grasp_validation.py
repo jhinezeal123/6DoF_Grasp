@@ -15,7 +15,10 @@ ROOT=Path(__file__).resolve().parents[1];PIPELINE=Path("/workspace/6DoF_Grasp/gr
 OUTPUT=ROOT/".local_data"/"sim_grasp_validation"
 BRIDGE=ROOT/"tools"/"sim_depth_bridge.py"
 PHOTO_K=np.array([[957.746642,0.,636.883856],[0.,948.820235,352.232764],[0.,0.,1.]])
-# Must match the pipeline's TSDF_SIZE_M; the harness cannot import grasppose.
+# Must match the pipeline's TSDF_SIZE_M; the harness cannot import grasppose
+# because the two live in different virtualenvs. The bridge reports the value it
+# actually used and bridge_infer fails on a mismatch, so this cannot drift
+# silently.
 VOLUME_SIZE_M=.30
 SETTINGS={"volume":"auto","depth_source":"worker","pipeline":PIPELINE}
 
@@ -75,6 +78,16 @@ def bridge_infer(image,k,camera_from_volume,depth,workdir,pipeline):
         raise ValidationFailure("sim depth bridge failed: %s"%(done.stderr.strip()[-400:] or done.stdout.strip()[-400:]))
     try:payload=json.loads(done.stdout.strip().splitlines()[-1])
     except (IndexError,ValueError) as e:raise ValidationFailure("sim depth bridge returned no JSON") from e
+    # The bridge reports what the pipeline actually did, so a bridge that
+    # silently stopped substituting depth, or a pipeline whose volume geometry
+    # drifted from the constant below, becomes a hard failure instead of a
+    # plausible-looking result.
+    if not payload.get("depth_port_calls"):
+        raise ValidationFailure("pipeline did not use the supplied simulator depth map")
+    reported=payload.get("tsdf_size_m")
+    if reported is None or abs(float(reported)-VOLUME_SIZE_M)>1e-9:
+        raise ValidationFailure("pipeline TSDF_SIZE_M is %r but this harness computes the "
+            "volume with %r"%(reported,VOLUME_SIZE_M))
     grasps=tuple(GraspCandidate(float(item["score"]),float(item["width_m"]),
         tuple(float(v) for v in item["translation_m"]),
         _matrix_to_quaternion_xyzw(item["rotation"]),
