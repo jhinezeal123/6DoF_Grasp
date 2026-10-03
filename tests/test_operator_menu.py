@@ -302,3 +302,17 @@ def test_root_back_exits_without_running_a_task(factory):
         ) == 0
     run.assert_not_called()
     assert "Đã thoát menu" in output.getvalue()
+
+
+def test_readiness_labels_keep_their_priority(factory):
+    task, _ = factory()
+    expected = {
+        "status": "cần thiết bị serial", "robot": "cần thiết bị serial",
+        "camera": "cần camera", "simulation": "volume ground-truth",
+        "perception": "có menu con", "advanced": "ROS cần SDK; VLA thử nghiệm",
+        "configure": "có thể mở", "setup": "cần Conda",
+    }
+    assert {key: task.availability(key) for key in expected} == expected
+    (task.root / ".venv/bin/python").unlink()
+    expected.update({key: "cần môi trường" for key in ("status", "robot", "camera", "simulation")})
+    assert {key: task.availability(key) for key in expected} == expected

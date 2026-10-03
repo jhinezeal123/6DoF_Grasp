@@ -43,6 +43,17 @@ def test_joints_convert_degrees_and_close_driver():
     assert driver.closed
 
 
+def test_existing_command_object_keeps_its_unit_and_lifecycle_contract():
+    from m750.robot.cli import build_parser
+    from m750.robot.commands import RobotCommands
+
+    driver = Driver()
+    args = build_parser().parse_args(["joints", "10", "20", "30", "40", "50", "60"])
+    assert RobotCommands(driver).execute(args) == (True, {})
+    assert driver.joints == pytest.approx(tuple(math.radians(v) for v in args.degrees))
+    assert not driver.closed
+
+
 def test_single_joint_preserves_other_five():
     driver = Driver()
     driver.joints = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
