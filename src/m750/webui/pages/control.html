@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>myArm M750 VLA - Robot Web Control Interface</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 16px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #30363d;
+    }
+    .title-box h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #58a6ff;
+    }
+    .title-box p {
+      font-size: 0.8rem;
+      color: #8b949e;
+      margin-top: 2px;
+    }
+    .mode-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .btn-mode {
+      background: #21262d;
+      color: #8b949e;
+      border-color: #30363d;
+    }
+    .btn-mode.active-control {
+      background: #238636 !important;
+      color: #fff !important;
+      border-color: #2ea043 !important;
+      box-shadow: 0 0 10px rgba(46, 160, 67, 0.4);
+    }
+    .btn-mode.active-simulate {
+      background: #d29922 !important;
+      color: #000 !important;
+      border-color: #bb8009 !important;
+      box-shadow: 0 0 10px rgba(210, 153, 34, 0.4);
+    }
+    .btn-apply {
+      background: #8957e5;
+      color: #fff;
+      border-color: #a371f7;
+    }
+    /* Nut "Dua robot that ve pose nay" chi hien khi vao mode simulate. */
+    #btnApply {
+      display: none;
+    }
+    .btn-apply:hover {
+      background: #a371f7;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 640px 1fr;
+      gap: 16px;
+    }
+    .viewport-card, .control-card, .usb-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .usb-card {
+      grid-column: 1 / -1;
+    }
+    .usb-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .usb-window {
+      background: #000;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .usb-window img {
+      width: 100%;
+      height: 300px;
+      /* contain chu KHONG cover: day la anh that de doi chieu, cat bot la mat goc nhin */
+      object-fit: contain;
+      display: block;
+    }
+    .usb-label {
+      padding: 4px 8px;
+      font-size: 0.7rem;
+      color: #8b949e;
+      background: #0d1117;
+    }
+    .stream-container {
+      width: 640px;
+      height: 480px;
+      background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid #21262d;
+    }
+    .stream-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .cam-nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .cam-nav button {
+      flex: 1;
+      padding: 6px;
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .cam-nav button.active {
+      background: #1f6feb;
+      border-color: #388bfd;
+      color: #fff;
+    }
+    .slider-group {
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #21262d;
+    }
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .slider-header span.val {
+      color: #58a6ff;
+      font-family: monospace;
+    }
+    .slider-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: #1f6feb;
+      cursor: pointer;
+    }
+    .btn-step {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      width: 28px;
+      height: 24px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .btn-step:hover {
+      background: #30363d;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-sim { background: rgba(210, 153, 34, 0.2); color: #e3b341; border: 1px solid #d29922; }
+    .badge-real { background: rgba(46, 160, 67, 0.2); color: #3fb950; border: 1px solid #2ea043; }
+    .preset-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .preset-bar button {
+      flex: 1;
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      padding: 6px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .preset-bar button:hover {
+      background: #30363d;
+      color: #58a6ff;
+    }
+    .control-tabs {
+      display: flex;
+      gap: 6px;
+      margin: -2px -2px 14px;
+      border-bottom: 1px solid #30363d;
+    }
+    .control-tab {
+      flex: 1;
+      padding: 9px 10px;
+      color: #8b949e;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-bottom: 0;
+      border-radius: 5px 5px 0 0;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .control-tab.active {
+      color: #fff;
+      background: #1f6feb;
+      border-color: #388bfd;
+    }
+    .control-panel {
+      display: none;
+    }
+    .control-panel.active {
+      display: block;
+    }
+    .ee-card h3 {
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+      color: #f0f6fc;
+    }
+    .ee-help {
+      color: #8b949e;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+    .ee-slider-group {
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #21262d;
+    }
+    .ee-slider-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: #c9d1d9;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .ee-slider-header .val {
+      color: #58a6ff;
+      font-family: monospace;
+    }
+    .ee-slider-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .ee-slider-controls input[type=range] {
+      flex: 1;
+    }
+    .ee-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: #8b949e;
+      font-size: 0.72rem;
+    }
+    .ee-info {
+      min-height: 18px;
+      margin-top: 9px;
+      color: #8b949e;
+      font-size: 0.75rem;
+      font-family: monospace;
+    }
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .stream-container { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title-box">
+      <h1>myArm M750 - Hệ Thống Điều Khiển Robot VLA</h1>
+      <p>Cấu trúc framework tích hợp Real Robot, Ghost Simulator & Camera</p>
+    </div>
+    <a href="/teleop" style="color:#c9d1d9; border:1px solid #30363d; border-radius:6px;
+       padding:8px 12px; text-decoration:none; font-size:0.8rem; white-space:nowrap;">TELEOP</a>
+    <div class="mode-bar">
+      <span id="badgeStatus" class="badge badge-real">MODE: CONTROL</span>
+      <button id="btnControl" class="btn btn-mode active-control" onclick="setMode('control')">CONTROL (Robot Thật)</button>
+      <button id="btnSimulate" class="btn btn-mode" onclick="setMode('simulate')">SIMULATE (Robot Ảo)</button>
+      <button id="btnOffset" class="btn btn-mode" onclick="setMode('offset')">OFFSET (Hiệu Chuẩn)</button>
+      <button id="btnApply" class="btn btn-apply" onclick="applyToReal()">🚀 Đưa robot thật về pose này</button>
+      <button id="btnSaveOffset" class="btn btn-apply" onclick="saveOffsets()" style="display:none">💾 LƯU OFFSET</button>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <!-- Camera Viewport Card -->
+    <div class="viewport-card">
+      <div class="stream-container">
+        <img id="streamView" src="/stream/cam_sim.mjpg" alt="Video Feed">
+      </div>
+      <div class="cam-nav">
+        <button id="camSimBtn" class="active" onclick="switchStream('sim')">🎥 Wrist Cam (Sim)</button>
+        <button id="camThirdBtn" onclick="switchStream('third')">🎬 Third-Person (Sim)</button>
+        <button id="camRealBtn" onclick="switchStream('real')">📷 USB Real Camera</button>
+      </div>
+      <div style="margin-top: 12px; font-size: 0.75rem; color: #8b949e; line-height: 1.4;">
+        <div><b>TCP Position:</b> <span id="tcpCoord" style="color: #58a6ff;">[0.0, 0.0, 0.0]</span></div>
+        <div><b>Trạng thái phần cứng:</b> <span id="hwStatus" style="color: #3fb950;">Checking...</span></div>
+        <div><b>Nhiệt độ servo:</b> <span id="tempStatus" style="color: #8b949e;">--</span></div>
+      </div>
+      <!-- Dung khan cap: luon hien, khong phu thuoc mode -->
+      <div class="cam-nav" style="margin-top: 10px;">
+        <button onclick="stopRobot()" style="color: #ff7b72; border-color: #f85149; font-weight: 700;">⛔ DỪNG KHẨN</button>
+        <button onclick="rearmRobot()" style="color: #d29922; border-color: #d29922;">🔓 KHÔI PHỤC</button>
+        <button onclick="powerOn()" style="color: #3fb950; border-color: #3fb950;">⚡ Bật nguồn</button>
+        <button onclick="powerOff()" style="color: #ff7b72; border-color: #f85149;">🔌 Tắt nguồn</button>
+      </div>
+      <div style="margin-top: 6px;">
+        <b>An toàn:</b> <span id="safetyBadge" style="color:#8b949e;">--</span>
+      </div>
+      <div id="errBox" style="display:none; margin-top: 8px; padding: 8px 10px; border-radius: 6px;
+           background: #3d1418; border: 1px solid #f85149; color: #ff7b72; font-size: 0.75rem;"></div>
+    </div>
+
+    <!-- Joint and coordinate controllers share one tabbed control card. -->
+    <div class="control-card">
+      <div class="control-tabs">
+        <button id="tabJoint" class="control-tab active" onclick="setControlTab('joint')">
+          Bảng Điều Khiển Khớp (change() API)
+        </button>
+        <button id="tabCoordinate" class="control-tab" onclick="setControlTab('coordinate')">
+          Move EE with Coord
+        </button>
+      </div>
+
+      <div id="jointPanel" class="control-panel active">
+        <h3 style="font-size: 0.95rem; margin-bottom: 12px; color: #f0f6fc;">Điều Khiển Khớp</h3>
+        <div id="slidersContainer"></div>
+
+        <!-- Gripper Slider -->
+        <div class="slider-group">
+          <div class="slider-header">
+            <span>Tay kẹp (Gripper)</span>
+            <span class="val" id="val_grip">0.0%</span>
+          </div>
+          <div class="slider-controls">
+            <button class="btn-step" onclick="stepChange('gripper', -5.0)">-</button>
+            <input type="range" id="slider_grip" min="0" max="100" step="1" value="0"
+                   oninput="onSliderDrag('gripper', this.value)" onchange="onSliderCommit('gripper', this.value)">
+            <button class="btn-step" onclick="stepChange('gripper', 5.0)">+</button>
+          </div>
+        </div>
+
+        <!-- Preset Actions -->
+        <div class="preset-bar">
+          <button onclick="applyPreset('home')">Home Pose</button>
+          <button onclick="applyPreset('pre_grasp')">Pre-Grasp</button>
+          <button onclick="applyPreset('rest')">Rest Pose</button>
+          <button onclick="applyPreset('photo')">📷 Pose ảnh</button>
+          <button onclick="stepChange('gripper', 100)">Mở Kẹp</button>
+          <button onclick="stepChange('gripper', -100)">Đóng Kẹp</button>
+          <button onclick="resetScene()" style="color: #ff7b72; border-color: #f85149;">🔄 Reset Scene</button>
+        </div>
+      </div>
+
+      <div id="coordinatePanel" class="control-panel">
+        <h3 style="font-size: 0.95rem; margin-bottom: 6px; color: #f0f6fc;">Điều Khiển EE bằng Tọa Độ</h3>
+        <div class="ee-help">
+          Pose tool0 trong frame <code>base_link</code>. Kéo slider để thay đổi.
+          XYZ dùng mét; quaternion theo thứ tự <code>qx, qy, qz, qw</code>.
+          Ở SIMULATE, ghost robot cập nhật ngay sau khi thả slider; ở CONTROL,
+          slider gửi <code>set_tcp_pose()</code> tới robot thật.
+          Nút Submit dùng chung ở thanh trên.
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>X (m)</span><span class="val" id="val_ee_x">0.300</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('x', -0.005)">-</button>
+            <input type="range" id="ee_x" min="-0.10" max="0.70" step="0.001" value="0.300"
+                   oninput="onEESliderInput('x', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('x', 0.005)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>Y (m)</span><span class="val" id="val_ee_y">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('y', -0.005)">-</button>
+            <input type="range" id="ee_y" min="-0.60" max="0.60" step="0.001" value="0.000"
+                   oninput="onEESliderInput('y', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('y', 0.005)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>Z (m)</span><span class="val" id="val_ee_z">0.250</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('z', -0.005)">-</button>
+            <input type="range" id="ee_z" min="0.00" max="0.70" step="0.001" value="0.250"
+                   oninput="onEESliderInput('z', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('z', 0.005)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qx</span><span class="val" id="val_ee_qx">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qx', -0.01)">-</button>
+            <input type="range" id="ee_qx" min="-1.00" max="1.00" step="0.01" value="0.000"
+                   oninput="onEESliderInput('qx', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qx', 0.01)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qy</span><span class="val" id="val_ee_qy">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qy', -0.01)">-</button>
+            <input type="range" id="ee_qy" min="-1.00" max="1.00" step="0.01" value="0.000"
+                   oninput="onEESliderInput('qy', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qy', 0.01)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qz</span><span class="val" id="val_ee_qz">0.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qz', -0.01)">-</button>
+            <input type="range" id="ee_qz" min="-1.00" max="1.00" step="0.01" value="0.000"
+                   oninput="onEESliderInput('qz', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qz', 0.01)">+</button>
+          </div>
+        </div>
+        <div class="ee-slider-group">
+          <div class="ee-slider-header"><span>qw</span><span class="val" id="val_ee_qw">1.000</span></div>
+          <div class="ee-slider-controls">
+            <button class="btn-step" onclick="stepEESlider('qw', -0.01)">-</button>
+            <input type="range" id="ee_qw" min="-1.00" max="1.00" step="0.01" value="1.000"
+                   oninput="onEESliderInput('qw', this.value)" onchange="onEESliderCommit()">
+            <button class="btn-step" onclick="stepEESlider('qw', 0.01)">+</button>
+          </div>
+        </div>
+        <div id="eePreviewInfo" class="ee-info">Chưa có pose tọa độ.</div>
+      </div>
+    </div>
+
+    <!-- Camera USB: 2 thiet bi V4L, luon hien, doc lap hoan toan voi robot -->
+    <div class="usb-card">
+      <h3 style="font-size: 0.95rem; margin-bottom: 12px; color: #f0f6fc;">Camera USB</h3>
+      <div class="usb-grid">
+        @@M750_0@@
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const JOINT_NAMES = @@M750_1@@;
+    const DEG_MIN = @@M750_2@@;
+    const DEG_MAX = @@M750_3@@;
+    let currentMode = "control";
+    let currentControlTab = "joint";
+    let currentStream = "sim";
+    let isDragging = false;
+    // Slider vua tha nhung tay robot chua toi: giu hien gia tri nguoi dung chon
+    // cho toi khi encoder duoi theo kip (xem onSliderCommit).
+    let pendingSlider = {};
+    // Coordinate slider vua tha nhung feedback/IK chua theo kip.
+    let pendingEE = null;
+
+    // Render 6 Joint Sliders
+    function initSliders() {
+      const container = document.getElementById("slidersContainer");
+      let html = "";
+      for (let i = 0; i < 6; i++) {
+        html += `
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>J${i+1}: ${JOINT_NAMES[i]}</span>
+              <span class="val" id="val_j${i}">0.0° (0.00 rad)</span>
+            </div>
+            <div class="slider-controls">
+              <button class="btn-step" onclick="stepChange(${i}, -0.0087266)">-</button>
+              <input type="range" id="slider_j${i}"
+                     min="${DEG_MIN[i]}" max="${DEG_MAX[i]}" step="0.5" value="0"
+                     oninput="onSliderDrag(${i}, this.value)"
+                     onchange="onSliderCommit(${i}, this.value)">
+              <button class="btn-step" onclick="stepChange(${i}, 0.0087266)">+</button>
+            </div>
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    function showErr(msg) {
+      const box = document.getElementById("errBox");
+      box.style.display = "block";
+      box.innerText = msg;
+    }
+
+    function clearErr() {
+      document.getElementById("errBox").style.display = "none";
+    }
+
+    // Helper POST dung chung: MOI lenh deu kiem tra status tra ve.
+    // Truoc day cac nut bo qua ket qua nen lenh that bai (vi pham gioi han,
+    // servo qua nhiet) im lang khong bao gi.
+    function post(url, body) {
+      return fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: body ? JSON.stringify(body) : undefined
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d && d.status === "error") {
+            showErr("Lệnh thất bại: " + (d.message || "robot từ chối (kiểm tra giới hạn khớp / nhiệt độ servo)"));
+          } else {
+            clearErr();
+          }
+          return d;
+        })
+        .catch(e => { showErr("Lỗi kết nối: " + e); });
+    }
+
+    function stopRobot() {
+      post("/api/stop").then(() => fetchStatus());
+    }
+
+    function rearmRobot() {
+      // Sau DUNG KHAN, driver chot fault_latched va TU CHOI moi quy dao. Khong
+      // bam nut nay thi robot im lang mai du moi thu khac van bao binh thuong.
+      post("/api/rearm").then(d => {
+        if (d && d.status === "ok") {
+          clearErr();
+        } else {
+          showErr("Khôi phục thất bại: " + ((d && d.message) || "driver từ chối"));
+        }
+        fetchStatus();
+      });
+    }
+
+    // Trang thai robot that dang chay quy dao, cap nhat tu /api/status.
+    let trajRunning = false;
+
+    function updateApplyButton() {
+      const b = document.getElementById("btnApply");
+      if (!b) return;
+      b.disabled = trajRunning;
+      b.style.opacity = trajRunning ? "0.45" : "1";
+      b.innerText = trajRunning ? "⏳ Đang di chuyển robot thật..."
+                                : "🚀 Đưa robot thật về pose này";
+    }
+
+    function powerOff() {
+      if (confirm("Tắt nguồn robot? Servo sẽ mất mô-men và tay có thể rơi xuống.")) {
+        post("/api/power_off").then(d => {
+          if (d && d.status === "ok") alert(d.message || "Đã tắt nguồn.");
+          fetchStatus();
+        });
+      }
+    }
+
+    function switchStream(type) {
+      const img = document.getElementById("streamView");
+      const btns = {
+        sim:   document.getElementById("camSimBtn"),
+        third: document.getElementById("camThirdBtn"),
+        real:  document.getElementById("camRealBtn"),
+      };
+      const srcs = {
+        sim:   "/stream/cam_sim.mjpg",
+        third: "/stream/cam_third.mjpg",
+        real:  "/stream/cam_real.mjpg",
+      };
+      if (!srcs[type]) type = "sim";
+      // Doi src cua <img> khong tu huy ket noi MJPEG cu -> phai ep tai lai
+      img.src = "about:blank";
+      img.src = srcs[type];
+      Object.keys(btns).forEach(k => {
+        if (btns[k]) btns[k].classList.toggle("active", k === type);
+      });
+      currentStream = type;
+    }
+
+    function powerOn() {
+      if (confirm("Bật nguồn robot? Servo sẽ giữ lại vị trí hiện tại (tay có thể đã tụt sau khi tắt nguồn).")) {
+        post("/api/power_on").then(d => {
+          if (d && d.status === "ok") alert(d.message || "Đã bật nguồn.");
+          else alert("Lỗi: " + ((d && d.message) || "không bật được nguồn"));
+        });
+      }
+    }
+
+    function setMode(mode) {
+      // A mode switch establishes a new pose source. Do not keep a coordinate
+      // target from the previous mode while the server syncs the ghost.
+      if (mode !== currentMode) {
+        pendingEE = null;
+        isDragging = false;
+      }
+      post("/api/set_mode", {mode: mode}).then(data => {
+        if (data && data.mode) updateModeUI(data.mode);
+        fetchStatus();
+      });
+    }
+
+    function renderControlTab(tab) {
+      if (tab !== "joint" && tab !== "coordinate") return;
+      currentControlTab = tab;
+      const jointTab = document.getElementById("tabJoint");
+      const coordTab = document.getElementById("tabCoordinate");
+      const jointPanel = document.getElementById("jointPanel");
+      const coordPanel = document.getElementById("coordinatePanel");
+      jointTab.classList.toggle("active", tab === "joint");
+      coordTab.classList.toggle("active", tab === "coordinate");
+      jointPanel.classList.toggle("active", tab === "joint");
+      coordPanel.classList.toggle("active", tab === "coordinate");
+    }
+
+    function setControlTab(tab) {
+      if (tab !== "joint" && tab !== "coordinate") return;
+      renderControlTab(tab);
+      post("/api/set_control_tab", {tab: tab}).then(() => fetchStatus());
+    }
+
+    function updateModeUI(mode) {
+      currentMode = mode;
+      const bControl = document.getElementById("btnControl");
+      const bSim = document.getElementById("btnSimulate");
+      const bOff = document.getElementById("btnOffset");
+      const bApply = document.getElementById("btnApply");
+      const bSave = document.getElementById("btnSaveOffset");
+      const badge = document.getElementById("badgeStatus");
+
+      bControl.className = "btn btn-mode";
+      bSim.className = "btn btn-mode";
+      bOff.className = "btn btn-mode";
+      bApply.style.display = "none";
+      bSave.style.display = "none";
+
+      if (mode === "simulate") {
+        bSim.className = "btn btn-mode active-simulate";
+        bApply.style.display = "inline-block";
+        badge.className = "badge badge-sim";
+        badge.innerText = "MODE: SIMULATE (Ghost Robot)";
+      } else if (mode === "offset") {
+        bOff.className = "btn btn-mode active-simulate";
+        bSave.style.display = "inline-block";
+        badge.className = "badge badge-sim";
+        badge.innerText = "MODE: OFFSET - kéo slider căn robot ảo cho khớp tay thật, rồi LƯU";
+      } else {
+        bControl.className = "btn btn-mode active-control";
+        badge.className = "badge badge-real";
+        badge.innerText = "MODE: CONTROL (Real Robot)";
+      }
+    }
+
+    function saveOffsets() {
+      if (!confirm("Lưu offset hiệu chuẩn?\n\nOffset = góc RAW của tay thật - góc model của robot ảo.\nGhi vào offsets.json và áp dụng ngay cho cả tiến trình.")) return;
+      post("/api/offsets/save", {}).then(d => {
+        if (d && d.status === "ok") {
+          alert("Đã lưu offset (deg):\n" + (d.offsets_deg || []).map(v => v.toFixed(2)).join(", "));
+        } else {
+          alert("Lỗi: " + ((d && d.message) || "không lưu được offset"));
+        }
+      });
+    }
+
+    function onSliderDrag(param, val) {
+      isDragging = true;
+      // Nguoi dung tu keo lai -> bo gia tri dang cho, de khong tranh nhau.
+      delete pendingSlider[param];
+      if (param === "gripper") {
+        document.getElementById("val_grip").innerText = parseFloat(val).toFixed(1) + "%";
+      } else {
+        const deg = parseFloat(val);
+        const rad = deg * Math.PI / 180.0;
+        document.getElementById("val_j" + param).innerText = deg.toFixed(1) + "° (" + rad.toFixed(2) + " rad)";
+      }
+    }
+
+    function onSliderCommit(param, val) {
+      // Thu tu QUAN TRONG: ghi pendingSlider TRUOC, roi moi isDragging = false.
+      //
+      // LOI THAT (nguoi dung bao: "dang dieu khien duoc thi keo slider no lai
+      // quay ve gia tri cu"): tha tay -> onchange -> gui lenh. Nhung tay robot
+      // di mat vai GIAY, trong khi vong poll /api/status chay moi 400ms. Lan poll
+      // ke tiep tra ve active_deg CU (tay chua toi) va ghi de slider -> slider
+      // nhay ve cho cu. Sau do tay moi di, nhung slider da sai.
+      //
+      // Cach sua: giu gia tri vua chon trong pendingSlider[] cho toi khi encoder
+      // duoi theo kip, hoac qua 8s thi bo cuoc de khong ket vinh vien.
+      let target_val = 0;
+      let target_display = 0;
+      if (param === "gripper") {
+        // Gui PHAN TRAM (0..100), khong phai met. Server tu quy doi qua
+        // Robot.set_gripper_pct() -> mot nguon su that cho do mo toi da.
+        // Truoc day JS tu nhan voi 0.0345 (quy uoc MOT ngon cua SDK cu), lech
+        // han voi quy uoc TONG 0..0.08 cua stack ROS hien tai.
+        target_val = parseFloat(val);
+        target_display = parseFloat(val);
+      } else {
+        target_val = parseFloat(val) * Math.PI / 180.0;
+        target_display = parseFloat(val);
+      }
+      pendingSlider[param] = {display: target_display, until: Date.now() + 8000};
+      isDragging = false;   // sau khi ghi pending -> khong con bi ghi de
+      post("/api/set_absolute", {param: param, value: target_val}).then(() => fetchStatus());
+    }
+
+    function stepChange(param, delta) {
+      // Gripper: ca slider lan nut bam deu dung PHAN TRAM (0..100).
+      // Truoc day JS tu doi sang met bang 0.0345 -> lech quy uoc (0..0.08).
+      post("/api/change", {param: param, delta: delta}).then(() => fetchStatus());
+    }
+
+    function applyToReal() {
+      if (confirm("Xác nhận đưa robot thật di chuyển về pose mô phỏng hiện tại?")) {
+        post("/api/apply_to_real", {control_tab: currentControlTab}).then(d => {
+          if (d && d.status !== "error") alert(d.message);
+          fetchStatus();
+        });
+      }
+    }
+
+    function applyPreset(name) {
+      post("/api/preset", {name: name}).then(() => fetchStatus());
+    }
+
+    function resetScene() {
+      if (confirm("Xác nhận reset toàn bộ scene mô phỏng MuJoCo và vật thể về vị trí gốc?")) {
+        post("/api/reset_scene").then(() => fetchStatus());
+      }
+    }
+
+    function setEESliderValue(name, value) {
+      const input = document.getElementById("ee_" + name);
+      if (!input || !Number.isFinite(Number(value))) return;
+      input.value = Number(value);
+      onEESliderInput(name, input.value, false);
+    }
+
+    function onEESliderInput(name, value, userInput = true) {
+      if (userInput) isDragging = true;
+      const numeric = Number(value);
+      const label = document.getElementById("val_ee_" + name);
+      if (label && Number.isFinite(numeric)) label.innerText = numeric.toFixed(3);
+    }
+
+    function stepEESlider(name, delta) {
+      const input = document.getElementById("ee_" + name);
+      if (!input) return;
+      const min = Number(input.min);
+      const max = Number(input.max);
+      const value = Math.min(max, Math.max(min, Number(input.value) + delta));
+      input.value = value.toFixed(name === "x" || name === "y" || name === "z" ? 3 : 2);
+      onEESliderInput(name, input.value);
+      onEESliderCommit();
+    }
+
+    function readEEPose() {
+      const ids = ["ee_x", "ee_y", "ee_z", "ee_qx", "ee_qy", "ee_qz", "ee_qw"];
+      const values = ids.map(id => parseFloat(document.getElementById(id).value));
+      if (values.some(v => !Number.isFinite(v))) {
+        showErr("Pose EE phai gom 7 so huu han.");
+        return null;
+      }
+      const qNorm = Math.hypot(values[3], values[4], values[5], values[6]);
+      if (qNorm < 1e-9) {
+        showErr("Quaternion khong duoc la vector 0.");
+        return null;
+      }
+      return {
+        position: values.slice(0, 3),
+        quaternion: values.slice(3).map(v => v / qNorm)
+      };
+    }
+
+    function setEEPoseInputs(position, quaternion) {
+      if (!position || position.length !== 3 || !quaternion || quaternion.length !== 4) return;
+      ["x", "y", "z"].forEach((name, i) => setEESliderValue(name, position[i]));
+      ["qx", "qy", "qz", "qw"].forEach((name, i) => setEESliderValue(name, quaternion[i]));
+    }
+
+    function updateEEPreviewInfo(data, prefix) {
+      const el = document.getElementById("eePreviewInfo");
+      if (!el || !data) return;
+      const p = (data.actual_position || data.position || []).map(v => Number(v).toFixed(3));
+      const err = Number(data.position_error_m);
+      el.innerText = prefix + " | EE: [" + p.join(", ") + "] m" +
+                     (Number.isFinite(err) ? " | loi " + (err * 1000).toFixed(1) + " mm" : "");
+    }
+
+    function onEESliderCommit() {
+      const pose = readEEPose();
+      if (!pose) {
+        isDragging = false;
+        return;
+      }
+      pendingEE = {pose: pose, until: Date.now() + 8000};
+      isDragging = false;
+      post("/api/set_ee_absolute", pose).then(d => {
+        if (d && d.status === "ok") {
+          if (currentMode === "simulate") switchStream("third");
+          updateEEPreviewInfo(d, currentMode === "simulate" ? "Ghost da cap nhat" : "Da gui set_tcp_pose");
+        } else {
+          pendingEE = null;
+        }
+        fetchStatus();
+      });
+    }
+
+    function fetchStatus() {
+      fetch("/api/status")
+        .then(r => r.json())
+        .then(data => {
+          if (data.ui_mode) {
+            if (data.ui_mode !== currentMode) {
+              pendingEE = null;
+              isDragging = false;
+            }
+            updateModeUI(data.ui_mode);
+          }
+          if (data.control_tab && data.control_tab !== currentControlTab) {
+            // Sync the server session without posting again on every poll.
+            renderControlTab(data.control_tab);
+          }
+
+          // Robot that dang chay quy dao -> khoa nut "Dua robot that ve pose nay"
+          // de tranh bam trung lam nhieu lenh chong nhau.
+          const tj = data.trajectory || {};
+          trajRunning = !!tj.running;
+          updateApplyButton();
+          // Loi tu thread FollowTrajectory (neu co) phai hien ra, khong im lang.
+          if (tj.error) showErr("Lỗi di chuyển robot thật: " + tj.error);
+          if (data.ee_preview) {
+            updateEEPreviewInfo(data.ee_preview, "Preview đang hiển thị");
+          }
+
+          if (currentControlTab === "coordinate" && !isDragging) {
+            const ep = data.ee_control_pose || {};
+            const p = ep.position;
+            const q = ep.quaternion;
+            if (p && p.length === 3 && q && q.length === 4) {
+              let holdPending = false;
+              if (pendingEE) {
+                const target = pendingEE.pose.position;
+                const targetQ = pendingEE.pose.quaternion;
+                const error = Math.hypot(
+                  Number(p[0]) - target[0],
+                  Number(p[1]) - target[1],
+                  Number(p[2]) - target[2]
+                );
+                const qError = Math.min(
+                  Math.hypot(Number(q[0]) - targetQ[0], Number(q[1]) - targetQ[1],
+                             Number(q[2]) - targetQ[2], Number(q[3]) - targetQ[3]),
+                  Math.hypot(Number(q[0]) + targetQ[0], Number(q[1]) + targetQ[1],
+                             Number(q[2]) + targetQ[2], Number(q[3]) + targetQ[3])
+                );
+                if (Date.now() <= pendingEE.until && (error > 0.005 || qError > 0.04)) {
+                  holdPending = true;
+                } else {
+                  pendingEE = null;
+                }
+              }
+              if (holdPending) {
+                setEEPoseInputs(pendingEE.pose.position, pendingEE.pose.quaternion);
+              } else {
+                setEEPoseInputs(p, q);
+              }
+            }
+          }
+
+          // Cap nhat TCP
+          if (data.tcp_pos) {
+            document.getElementById("tcpCoord").innerText =
+              "[" + data.tcp_pos.map(v => v.toFixed(3)).join(", ") + "] m";
+          }
+          // Cap nhat Hardware status
+          document.getElementById("hwStatus").innerText =
+            data.is_real_connected ? "Robot Thật Online (COM)" : "Mô phỏng (MuJoCo Offline Hardware)";
+          document.getElementById("hwStatus").style.color =
+            data.is_real_connected ? "#3fb950" : "#8b949e";
+
+          // Robot mat nguon/mat ket noi: bao RO rang thay vi de nguoi dung tuong
+          // slider hong. Truoc day server còn TREO han khi gap truong hop nay.
+          if (data.hardware_offline) {
+            showErr("⚠️ Robot KHÔNG PHẢN HỒI — kiểm tra nguồn điện và cáp USB. " +
+                    "Sliders sẽ không tác dụng cho tới khi robot trả lời lại.");
+          }
+
+          // Nhiet do servo: >60 do la servo sap tu ngat (da gap: 72 do -> dung het).
+          const tEl = document.getElementById("tempStatus");
+          const temps = data.temperatures;
+          // Server gui null cho khop chua doc duoc (driver cu / backend fake).
+          const known = (temps || []).filter(v => typeof v === "number" && isFinite(v));
+          if (known.length) {
+            const hot = Math.max(...known);
+            tEl.innerText = "[" + known.join(", ") + "] °C";
+            tEl.style.color = hot >= 60 ? "#f85149" : (hot >= 50 ? "#d29922" : "#3fb950");
+          } else {
+            tEl.innerText = "không đọc được (chưa hỗ trợ / mất nguồn)";
+            tEl.style.color = "#8b949e";
+          }
+
+          // Trang thai an toan: sau DUNG KHAN la "fault_latched" va driver TU CHOI
+          // moi quy dao. Phai hien ro, neu khong nguoi dung chi thay robot im lang.
+          const sEl = document.getElementById("safetyBadge");
+          if (sEl) {
+            const st = data.safety_state || "unknown";
+            const armed = !!data.is_armed;
+            sEl.innerText = armed ? (st + " — sẵn sàng") : (st + " — CẦN KHÔI PHỤC");
+            sEl.style.color = armed ? "#3fb950" : "#d29922";
+          }
+
+          if (!isDragging) {
+            const degs = data.active_deg || [];
+            const nowMs = Date.now();
+            for (let i = 0; i < 6; i++) {
+              if (degs[i] !== undefined) {
+                const sl = document.getElementById("slider_j" + i);
+                const vl = document.getElementById("val_j" + i);
+                const pend = pendingSlider[i];
+                if (pend) {
+                  // Tay robot chua toi noi -> giu gia tri nguoi dung vua chon,
+                  // neu khong slider se nhay ve cho cu.
+                  if (Math.abs(degs[i] - pend.display) <= 3.0 || nowMs > pend.until) {
+                    delete pendingSlider[i];   // da toi (hoac qua lau) -> theo encoder
+                  } else {
+                    if (vl) vl.innerText = pend.display.toFixed(1) + "° (" +
+                      (pend.display * Math.PI / 180.0).toFixed(2) + " rad)";
+                    continue;
+                  }
+                }
+                if (sl) sl.value = degs[i].toFixed(1);
+                if (vl) vl.innerText = degs[i].toFixed(1) + "° (" + (degs[i] * Math.PI / 180.0).toFixed(2) + " rad)";
+              }
+            }
+            const gPct = data.gripper_pct !== undefined ? data.gripper_pct : 0;
+            const slGrip = document.getElementById("slider_grip");
+            const vlGrip = document.getElementById("val_grip");
+            const pendG = pendingSlider["gripper"];
+            let gripHeld = false;
+            if (pendG) {
+              if (Math.abs(gPct - pendG.display) <= 5.0 || nowMs > pendG.until) {
+                delete pendingSlider["gripper"];
+              } else {
+                gripHeld = true;
+                if (vlGrip) vlGrip.innerText = pendG.display.toFixed(1) + "%";
+                if (slGrip) slGrip.value = pendG.display.toFixed(0);
+              }
+            }
+            if (!gripHeld) {
+              if (slGrip) slGrip.value = gPct.toFixed(0);
+              if (vlGrip) vlGrip.innerText = gPct.toFixed(1) + "%";
+            }
+          }
+        });
+    }
+
+    initSliders();
+    fetchStatus();
+    setInterval(fetchStatus, 400);
+  </script>
+</body>
+</html>

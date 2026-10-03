@@ -13,7 +13,7 @@ import threading
 
 def state_main() -> int:
     """Doc va in trang thai myArm M750 (6 khop, gripper, pose URDF, fw coords)."""
-    from .control import ArmController
+    from .robot.control import ArmController
 
     ArmController().print_state()
     return 0

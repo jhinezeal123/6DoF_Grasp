@@ -57,12 +57,10 @@ class MujocoRobotDriver(RobotDriver):
             raise RuntimeError("MuJoCo model is missing one or more robot joints")
 
         self._qpos_addrs = tuple(
-            int(self.model.jnt_qposadr[joint_id])
-            for joint_id in self._joint_ids
+            int(self.model.jnt_qposadr[joint_id]) for joint_id in self._joint_ids
         )
         self._dof_addrs = tuple(
-            int(self.model.jnt_dofadr[joint_id])
-            for joint_id in self._joint_ids
+            int(self.model.jnt_dofadr[joint_id]) for joint_id in self._joint_ids
         )
 
         self._flange_body_id = mujoco.mj_name2id(
@@ -147,10 +145,7 @@ class MujocoRobotDriver(RobotDriver):
             gripper_opening_m=self._gripper_opening_m,
             tcp_pose=TcpPose(
                 tuple(float(value) for value in position),
-                tuple(
-                    float(value)
-                    for value in Rotation.from_matrix(rotation).as_quat()
-                ),
+                tuple(float(value) for value in Rotation.from_matrix(rotation).as_quat()),
             ),
             connected=True,
             ready=True,
@@ -222,11 +217,7 @@ class MujocoRobotDriver(RobotDriver):
             opening = float(opening_m)
         except (TypeError, ValueError):
             return False
-        if (
-            not math.isfinite(opening)
-            or opening < 0.0
-            or opening > self.max_gripper_opening_m
-        ):
+        if not math.isfinite(opening) or opening < 0.0 or opening > self.max_gripper_opening_m:
             return False
 
         half = opening / 2.0

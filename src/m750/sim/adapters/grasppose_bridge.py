@@ -23,6 +23,7 @@ Two guards keep that from recurring:
 * the harness is told the pipeline's actual ``TSDF_SIZE_M`` so the two repos can
   no longer drift apart on a constant neither side can import from the other.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,8 +40,7 @@ def _matrix(flat, shape, name):
     return values.reshape(shape)
 
 
-def make_simulator_depth(DepthPort, DepthResult, resolve_camera_intrinsics,
-                         depth_map):
+def make_simulator_depth(DepthPort, DepthResult, resolve_camera_intrinsics, depth_map):
     """Build a DepthPort that returns the supplied simulator depth map."""
 
     class SimulatorDepth(DepthPort):
@@ -62,16 +62,15 @@ def make_simulator_depth(DepthPort, DepthResult, resolve_camera_intrinsics,
             height, width = rgb.shape[:2]
             if depth_map.shape != (height, width):
                 raise ValueError(
-                    "depth map %r does not match image %r"
-                    % (depth_map.shape, (height, width))
+                    "depth map %r does not match image %r" % (depth_map.shape, (height, width))
                 )
-            intrinsics = resolve_camera_intrinsics(
-                camera_K, fov_x, width, height)
+            intrinsics = resolve_camera_intrinsics(camera_K, fov_x, width, height)
             return DepthResult(
                 depth=depth_map,
                 intrinsics=intrinsics.astype(np.float32),
-                fov_x_deg=float(2.0 * np.degrees(np.arctan(
-                    width / (2.0 * max(float(intrinsics[0, 0]), 1e-6))))),
+                fov_x_deg=float(
+                    2.0 * np.degrees(np.arctan(width / (2.0 * max(float(intrinsics[0, 0]), 1e-6))))
+                ),
                 scale=1.0,
                 reason="simulator ground-truth depth",
             )
@@ -83,8 +82,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pipeline-repo", required=True)
     parser.add_argument("--image", required=True)
-    parser.add_argument("--depth", required=True,
-                        help=".npy float32 axial camera-Z depth in metres")
+    parser.add_argument(
+        "--depth", required=True, help=".npy float32 axial camera-Z depth in metres"
+    )
     parser.add_argument("--camera-k", required=True, help="JSON 9 values")
     parser.add_argument("--camera-from-volume", default=None, help="JSON 16 values")
     parser.add_argument("--prompt-id", default="cube")
@@ -103,15 +103,14 @@ def main():
 
     K = _matrix(args.camera_k, (3, 3), "camera_k")
     T_cam_volume = (
-        None if args.camera_from_volume is None
+        None
+        if args.camera_from_volume is None
         else _matrix(args.camera_from_volume, (4, 4), "camera_from_volume")
     )
     depth_map = np.load(args.depth).astype(np.float32)
 
-    depth_port = make_simulator_depth(
-        DepthPort, DepthResult, resolve_camera_intrinsics, depth_map)
-    estimator = LocalGraspEstimator(
-        build_default_pipeline(depth=depth_port)).load()
+    depth_port = make_simulator_depth(DepthPort, DepthResult, resolve_camera_intrinsics, depth_map)
+    estimator = LocalGraspEstimator(build_default_pipeline(depth=depth_port)).load()
 
     from PIL import Image
 

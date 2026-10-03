@@ -43,10 +43,10 @@ except Exception:  # may khong co mujoco thi PreviewServer bao loi ro rang
 
 import cv2  # noqa: E402
 
-from .arm import MyArmM750
-from .control import ArmController
-from .ik import IKSolver
-from .kinematics import ArmKinematics
+from .robot.arm import MyArmM750
+from .robot.control import ArmController
+from .robot.ik import IKSolver
+from .robot.kinematics import ArmKinematics
 from .spec import JOINT_NAMES, RobotSpec, model_dir
 
 # Scene mo phong cua preview: ban MuJoCo don gian cua server (simu/assets).

@@ -45,22 +45,22 @@ def __getattr__(name):
     """Lazy compatibility imports for the pre-refactor public API."""
 
     if name == "MyArmM750":
-        from .arm import MyArmM750
+        from .robot.arm import MyArmM750
         return MyArmM750
     if name == "ArmController":
-        from .control import ArmController
+        from .robot.control import ArmController
         return ArmController
     if name == "ArmKinematics":
-        from .kinematics import ArmKinematics
+        from .robot.kinematics import ArmKinematics
         return ArmKinematics
     if name == "IKSolver":
-        from .ik import IKSolver
+        from .robot.ik import IKSolver
         return IKSolver
     if name == "SafetyGate":
-        from .safety import SafetyGate
+        from .robot.safety import SafetyGate
         return SafetyGate
     if name == "ring_views":
-        from .viewpoints import ring_views
+        from .robot.viewpoints import ring_views
         return ring_views
     raise AttributeError("module 'm750' has no attribute %r" % name)
 

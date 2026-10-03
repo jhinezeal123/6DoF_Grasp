@@ -39,6 +39,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 "m750.model" = ["*.urdf", "*.xml", "*.yaml", "meshes/mujoco/*.obj"]
 
+"m750.webui.pages" = ["*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # This script is run manually against the physical robot.
