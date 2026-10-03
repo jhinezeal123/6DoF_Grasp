@@ -28,14 +28,6 @@ FW_SAFE_MARGIN_DEG = 1.5
 # Huong ra ngoai cua tool la -z (flange o +118, tool0 o 0, dau ngon o +74.5..+99.5).
 # tests/test_gripper_pose.py kiem tra lai hang so nay voi URDF.
 GRIP_L_MM = 87.0
-# tool0 so voi flange: flange o +118 mm tren truc x cua tool0, va truc tool0
-# xoay -90 deg quanh y so voi flange. Ca mujoco driver lan harness validate deu
-# dung chung cap nay - truoc day moi ben tu khai bao mot ban, doi mot ben thi ben
-# kia lang le giu y niem cu ve vi tri tool.
-# Tuple chu khong phai np.ndarray: spec.py khong import thu vien ngoai de ban cai
-# toi thieu van import duoc.
-TOOL0_OFFSET_M = (0.118, 0.0, 0.0)
-TOOL0_ROTATION = ((0.0, 0.0, -1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0))
 # Tong do mo hai ngon theo URDF: 2 x 0.0345 m. pymycobot dung 0..100.
 GRIPPER_MAX_OPENING_M = 0.069
 
@@ -86,8 +78,6 @@ __all__ = [
     "GRIP_L_MM",
     "GRIPPER_MAX_OPENING_M",
     "JOINT_NAMES",
-    "TOOL0_OFFSET_M",
-    "TOOL0_ROTATION",
     "URDF_PATH",
     "RobotSpec",
     "model_dir",

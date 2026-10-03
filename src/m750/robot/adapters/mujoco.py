@@ -8,9 +8,8 @@ from typing import Optional, Sequence
 
 import mujoco
 import numpy as np
-from scipy.spatial.transform import Rotation
 
-from m750.spec import JOINT_NAMES, TOOL0_OFFSET_M, TOOL0_ROTATION, model_dir
+from m750.spec import JOINT_NAMES, model_dir
 
 from ..contracts import RobotDriver
 from ..types import JointLimits, RobotState, TcpPose
@@ -36,8 +35,15 @@ class MujocoRobotDriver(RobotDriver):
     publisher, serial port or real-robot facade is reachable from this class.
     """
 
-    _TOOL0_OFFSET = np.array(TOOL0_OFFSET_M, dtype=np.float64)
-    _TOOL0_ROT = np.array(TOOL0_ROTATION, dtype=np.float64)
+    _TOOL0_OFFSET = np.array([0.118, 0.0, 0.0], dtype=np.float64)
+    _TOOL0_ROT = np.array(
+        [
+            [0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
 
     def __init__(self, scene_path: Optional[str] = None) -> None:
         self.scene_path = os.path.abspath(scene_path or DEFAULT_SCENE)
@@ -112,6 +118,38 @@ class MujocoRobotDriver(RobotDriver):
         mujoco.mj_forward(self.model, self.data)
 
     @staticmethod
+    def _mat_to_quat_xyzw(matrix) -> tuple:
+        m = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
+        trace = float(np.trace(m))
+        if trace > 0.0:
+            s = math.sqrt(trace + 1.0) * 2.0
+            w = 0.25 * s
+            x = (m[2, 1] - m[1, 2]) / s
+            y = (m[0, 2] - m[2, 0]) / s
+            z = (m[1, 0] - m[0, 1]) / s
+        elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+            s = math.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2.0
+            w = (m[2, 1] - m[1, 2]) / s
+            x = 0.25 * s
+            y = (m[0, 1] + m[1, 0]) / s
+            z = (m[0, 2] + m[2, 0]) / s
+        elif m[1, 1] > m[2, 2]:
+            s = math.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2.0
+            w = (m[0, 2] - m[2, 0]) / s
+            x = (m[0, 1] + m[1, 0]) / s
+            y = 0.25 * s
+            z = (m[1, 2] + m[2, 1]) / s
+        else:
+            s = math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2.0
+            w = (m[1, 0] - m[0, 1]) / s
+            x = (m[0, 2] + m[2, 0]) / s
+            y = (m[1, 2] + m[2, 1]) / s
+            z = 0.25 * s
+        quaternion = np.array([x, y, z, w], dtype=np.float64)
+        quaternion /= np.linalg.norm(quaternion)
+        return tuple(float(value) for value in quaternion)
+
+    @staticmethod
     def _quat_xyzw_to_mat(quaternion) -> np.ndarray:
         q = np.asarray(quaternion, dtype=np.float64).reshape(4)
         q /= np.linalg.norm(q)
@@ -147,10 +185,7 @@ class MujocoRobotDriver(RobotDriver):
             gripper_opening_m=self._gripper_opening_m,
             tcp_pose=TcpPose(
                 tuple(float(value) for value in position),
-                tuple(
-                    float(value)
-                    for value in Rotation.from_matrix(rotation).as_quat()
-                ),
+                self._mat_to_quat_xyzw(rotation),
             ),
             connected=True,
             ready=True,
