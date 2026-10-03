@@ -8,8 +8,8 @@ from typing import Optional, Sequence
 
 from scipy.spatial.transform import Rotation
 
-from m750.arm import MyArmM750
-from m750.control import ArmController
+from m750.robot.arm import MyArmM750
+from m750.robot.control import ArmController
 from m750.spec import RobotSpec
 
 from ..contracts import EmergencyStopController, PowerController, RobotDriver
@@ -95,10 +95,7 @@ class PymycobotRobotDriver(RobotDriver, EmergencyStopController, PowerController
         transform = self.controller.kin.fk_tool0(q_deg)
         tcp_pose = TcpPose(
             tuple(float(value) for value in transform.translation),
-            tuple(
-                float(value)
-                for value in Rotation.from_matrix(transform.rotation).as_quat()
-            ),
+            tuple(float(value) for value in Rotation.from_matrix(transform.rotation).as_quat()),
         )
         opening, gripper_value = self._gripper_opening()
         device = self.arm.open()
@@ -157,11 +154,7 @@ class PymycobotRobotDriver(RobotDriver, EmergencyStopController, PowerController
             opening = float(opening_m)
         except (TypeError, ValueError):
             return False
-        if (
-            not math.isfinite(opening)
-            or opening < 0.0
-            or opening > self.max_gripper_opening_m
-        ):
+        if not math.isfinite(opening) or opening < 0.0 or opening > self.max_gripper_opening_m:
             return False
 
         value = int(round(opening / self.max_gripper_opening_m * 100.0))

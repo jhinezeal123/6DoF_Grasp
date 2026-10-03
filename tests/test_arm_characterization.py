@@ -30,9 +30,11 @@ class Device:
 def make_arm(monkeypatch):
     device = Device()
     opened = []
+
     def factory(port, baudrate):
         opened.append((port, baudrate))
         return device
+
     monkeypatch.setattr(arm_module, "MyArmMControl", factory)
     monkeypatch.setattr(arm_module, "_held", lambda port: [])
     arm = MyArmM750(RobotSpec(port="/dev/fake-arm"))
@@ -58,13 +60,13 @@ def test_power_uses_feedback_instead_of_vendor_ack(monkeypatch):
 
 def test_single_joint_preserves_the_other_five_targets(monkeypatch):
     arm, device, _ = make_arm(monkeypatch)
-    device.angles = [1., 2., 3., 4., 5., 6.]
-    assert arm.set_joint(3, 12., speed=20, wait=False)
-    assert device.commands == [([1., 2., 12., 4., 5., 6.], 20)]
+    device.angles = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    assert arm.set_joint(3, 12.0, speed=20, wait=False)
+    assert device.commands == [([1.0, 2.0, 12.0, 4.0, 5.0, 6.0], 20)]
 
 
 def test_verified_joint_move_keeps_retry_and_target_contract(monkeypatch):
     arm, device, _ = make_arm(monkeypatch)
     monkeypatch.setattr(arm, "wait_settled", lambda timeout: True)
-    assert arm.write_joints([10.] * 6, speed=15)
-    assert device.commands == [([10.] * 6, 15)]
+    assert arm.write_joints([10.0] * 6, speed=15)
+    assert device.commands == [([10.0] * 6, 15)]
