@@ -37,6 +37,23 @@ Script dùng `CONDA_EXE`, conda trên PATH hoặc `~/miniforge3/bin/conda`.
 dependency riêng. Không dùng `.venv` của pipeline để điều khiển robot.
 Test phần cứng thủ công bị loại khỏi pytest; test backend dùng thiết bị giả.
 
+## CLI ngay tại root
+
+```bash
+./robot --help
+./robot state
+./robot angles
+./robot power-on
+./robot --speed 15 joint 3 10
+./robot gripper 30
+./robot stop
+```
+
+`joints/joint` dùng độ; `gripper` mặc định mm, hỗ trợ `--unit percent`.
+`tcp` dùng mm + Euler XYZ độ. Lệnh move gửi chuyển động thật; CLI không tự bật
+nguồn. Xem [đầy đủ lệnh và đơn vị](docs/cli-robot-vi.md).
+Có thể dùng `.venv/bin/python robot.py` hoặc `m750-robot` sau cài editable.
+
 ## Điều khiển qua OOP
 
 ```python
@@ -106,7 +123,7 @@ và tool calibration trước khi điều khiển trong khung base.
 ## Refactor và change
 
 Refactor giữ thuật toán, calibration, unit, pin, endpoint và hành vi hiện tại;
-test chạy xanh trước/sau. CLI root là change ở PR sau trên nền đã refactor.
+test chạy xanh trước/sau. CLI root được thêm ở PR riêng trên nền đã refactor.
 Không trộn model/solver/protocol mới trong diff refactor. GitHub CI chạy cả
 rendering bằng OSMesa và test Unix socket; offline unit tests không chứng minh
 robot thật hay legacy ROS service đã chạy thành công.

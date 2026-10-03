@@ -15,8 +15,7 @@ port, starting ROS, or constructing a physical robot driver.
 - The scene excludes the overlapping upper_arm_link/forearm_link collision
   proxies at the elbow. All other robot self contacts and robot/world contacts
   are checked; grasp contact is permitted only between finger pads and cube.
-- The current GraspPose output has not passed the geometric end-to-end checks.
-  The upstream VGN Grasp type leaves the grasp-frame definition open, while
+- The upstream VGN Grasp type leaves the grasp-frame definition open, while
   its simulator uses rotation column 3 as the approach direction. This harness
   assumes the same +Z approach axis and measures the simulated tool-to-grasp
   offset. No unverified quaternion rotation is applied in the adapter.
@@ -26,17 +25,39 @@ port, starting ROS, or constructing a physical robot driver.
 
 ## Run on KTMT
 
-Keep the photo private and outside Git. The perception worker is pinned at
-666c7eb608c5315ea252fd02b3f5446c39198ee6.
+Giữ ảnh riêng tư ngoài Git. Gate 10/10 trên đường worker DA3 cần **cả hai**
+điều kiện: `YOLOE_CONF=0.05` trong process worker và `--volume gravity` ở harness.
+`--depth-source worker` ghi rõ rằng depth do model tính, không lấy depth thật từ
+MuJoCo. Dùng `.venv` riêng của từng repo:
 
-    cd /workspace/6DoF_Grasp/grasp_pipeline_repo
-    bash scripts/worker.sh start
-    cd /workspace/6DoF_Grasp/htc_sim_grasp_validation
-    MUJOCO_GL=egl .venv/bin/python -m pytest -q
-    MUJOCO_GL=egl .venv/bin/python tools/sim_grasp_validation.py \
-      --mode all \
-      --socket /workspace/6DoF_Grasp/grasp_pipeline_repo/.runtime/worker.sock \
-      --photo /path/to/private/cam2.jpg
+```bash
+cd /workspace/6DoF_Grasp/grasp_pipeline_repo
+git rev-parse HEAD
+GRASP_DEPTH_BACKEND=da3 YOLOE_CONF=0.05 bash scripts/worker.sh restart
+
+cd /workspace/6DoF_Grasp
+git rev-parse HEAD
+MUJOCO_GL=egl .venv/bin/python -m pytest -q
+MUJOCO_GL=egl .venv/bin/python tools/sim_grasp_validation.py \
+  --mode all --volume gravity --depth-source worker \
+  --socket /workspace/6DoF_Grasp/grasp_pipeline_repo/.runtime/worker.sock \
+  --photo .local_data/private/cam2.jpg
+```
+
+Với worker đang tắt, có thể dùng `start` thay `restart`. Khi worker đã chạy,
+`start` có thể tái sử dụng process cũ; biến môi trường mới không được áp dụng
+cho process đó. `restart` mới khởi động process với backend/confidence ở lệnh
+trên. `scripts/worker.sh` không tự đặt `YOLOE_CONF=0.05`; lưu nguyên lệnh này
+trong script khởi động hoặc cấu hình service nếu muốn giữ cấu hình sau restart.
+
+Ghi SHA hai checkout cùng cấu hình vào hồ sơ nghiệm thu. Pin consumer
+`666c7eb608c5315ea252fd02b3f5446c39198ee6` là metadata khởi tạo; nó không chứng
+minh worker resident đang chạy đúng SHA đó.
+
+**Ý nghĩa của 10/10:** `gravity` dùng tâm vật thể ground-truth tại lúc chụp
+để dựng volume. Gate này kiểm chuỗi perception → TSDF → VGN → IK → thực thi
+vật lý với volume được cung cấp, chưa kiểm khả năng tự tìm volume trên robot
+thật. Mặc định `auto` của CLI và confidence `0.20` của pipeline vẫn giữ nguyên.
 
 Artifacts go under .local_data/sim_grasp_validation/, which Git ignores.
 The report lists the synthetic cube, pedestal, table and camera mount dimensions,
