@@ -4,6 +4,7 @@
 | --- | --- |
 | API public, import nhẹ | `src/m750/__init__.py` |
 | CLI pymycobot từ root | `robot`, `robot.py`, `src/m750/robot/cli.py` |
+| Danh mục/menu tác vụ | `operator/tasks.py`: `FEATURES` khai báo tên, mô tả và điều kiện; `operator/console.py` chỉ lo menu |
 | Thông số robot/calibration/đường model | `spec.py` — `RobotSpec` |
 | Contract chung cho robot thật và MuJoCo | `robot/contracts.py`, `robot/types.py` |
 | Use case điều khiển qua contract | `robot/application.py` — `RobotControl` |

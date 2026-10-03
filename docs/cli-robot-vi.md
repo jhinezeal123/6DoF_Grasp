@@ -41,8 +41,9 @@ driver**. CLI không tự bật nguồn để chạy một lệnh move. Exit cod
 Ctrl-C thử gửi stop nếu backend có capability này, luôn thử close driver và
 trả code 130. Nếu stop hoặc close ném exception, CLI ghi lỗi ra stderr mà
 không che mất Ctrl-C. Lệnh thường trả code 1 nếu cleanup thất bại.
-Lệnh nhận/gửi đều đi qua `RobotControl`/capabilities và adapter pymycobot;
-không nhân bản logic retry, IK, conversion hay truy cập firmware Cartesian.
+CLI đổi đơn vị tại `robot/commands.py:execute_command`, rồi gọi `RobotDriver`/
+capabilities và adapter pymycobot; ứng dụng Python vẫn dùng `RobotControl`.
+Retry, IK và truy cập firmware Cartesian do adapter/control hiện có quản lý.
 
 PR này chỉ thêm CLI trên nền refactor; không sửa solver/calibration/driver.
 Test dùng fake driver, không mở serial hoặc thử chuyển động trên robot thật.
