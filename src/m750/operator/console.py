@@ -108,7 +108,7 @@ def main(argv=None, terminal=None):
                     return 1
             if args.action:
                 return 0
-    except EOFError:
+    except (EOFError, Back):
         view.say("\nĐã thoát menu.")
         return 0
     except KeyboardInterrupt:

@@ -68,7 +68,7 @@ def test_root_catalog_works_outside_repo_without_robot_or_site_packages():
 
 def test_menu_eof_bad_choice_and_return_do_not_touch_robot(factory):
     task, output = factory()
-    with patch("m750.operator.terminal.subprocess.run") as run:
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
         assert (
             main(["--config", str(task.store.path)], Terminal(io.StringIO("bad\n0\n"), output)) == 0
         )
@@ -115,7 +115,7 @@ def test_invalid_profile_is_rejected_before_execution(factory, changes):
 
 def test_motion_shows_command_before_confirm_and_can_be_cancelled(factory):
     task, output = factory("3\n30\nn\n")
-    with patch("m750.operator.terminal.subprocess.run") as run:
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
         with pytest.raises(Back):
             task.robot()
     run.assert_not_called()
@@ -128,7 +128,7 @@ def test_joint_command_uses_saved_serial_and_does_not_auto_power_on(factory):
     task, _ = factory("1\n3\n10\ny\n")
     task.save(replace(task.profile, port="/dev/serial/by-id/test", speed=15))
     response = subprocess.CompletedProcess([], 0, '{"ok":true,"command":"joint"}\n', "")
-    with patch("m750.operator.terminal.subprocess.run", return_value=response) as run:
+    with patch("m750.operator.terminal.CommandRunner._execute", return_value=response) as run:
         task.robot()
     argv = run.call_args.args[0]
     assert argv[-3:] == ["joint", "3", "10"]
@@ -140,7 +140,7 @@ def test_joint_command_uses_saved_serial_and_does_not_auto_power_on(factory):
 def test_power_and_serial_stop_route_through_root_cli(factory, choice, command):
     task, output = factory(choice + "\ny\n")
     response = subprocess.CompletedProcess([], 0, '{"ok":true}\n', "")
-    with patch("m750.operator.terminal.subprocess.run", return_value=response) as run:
+    with patch("m750.operator.terminal.CommandRunner._execute", return_value=response) as run:
         task.robot()
     assert run.call_args.args[0][-1] == command
     if command == "stop":
@@ -149,7 +149,7 @@ def test_power_and_serial_stop_route_through_root_cli(factory, choice, command):
 
 def test_invalid_numeric_input_never_runs_driver(factory):
     task, _ = factory("3\nnan\n")
-    with patch("m750.operator.terminal.subprocess.run") as run:
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
         with pytest.raises(ValueError, match="hữu hạn"):
             task.robot()
     run.assert_not_called()
@@ -175,7 +175,7 @@ def test_simulation_uses_scoped_preset_and_separate_interpreters(factory):
     before_profile = task.store.path.read_bytes()
     before_env = dict(os.environ)
     with patch(
-        "m750.operator.terminal.subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+        "m750.operator.terminal.CommandRunner._execute", return_value=subprocess.CompletedProcess([], 0)
     ) as run:
         task.simulation()
     assert run.call_count == 2
@@ -194,7 +194,7 @@ def test_simulation_uses_scoped_preset_and_separate_interpreters(factory):
 def test_missing_robot_environment_blocks_worker_restart(factory):
     task, _ = factory("y\n")
     (task.root / ".venv/bin/python").unlink()
-    with patch("m750.operator.terminal.subprocess.run") as run:
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
         with pytest.raises(RuntimeError, match="Thiếu Python robot"):
             task.simulation()
     run.assert_not_called()
@@ -203,7 +203,7 @@ def test_missing_robot_environment_blocks_worker_restart(factory):
 def test_dry_run_does_not_fork_or_write_configuration(factory):
     task, output = factory("3\n30\n", dry=True)
     before = task.store.path.read_bytes()
-    with patch("m750.operator.terminal.subprocess.run") as run:
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
         task.robot()
         task.simulation()
         task.save(replace(task.profile, speed=15))
@@ -218,7 +218,7 @@ def test_perception_uses_child_launcher_socket_and_captured_photo(factory):
     photo.write_bytes(b"fixture")
     task.profile = replace(task.profile, last_photo=str(photo))
     with patch(
-        "m750.operator.terminal.subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+        "m750.operator.terminal.CommandRunner._execute", return_value=subprocess.CompletedProcess([], 0)
     ) as run:
         task.perception()
     argv = run.call_args.args[0]
@@ -230,7 +230,7 @@ def test_perception_uses_child_launcher_socket_and_captured_photo(factory):
 
 def test_ros_launch_can_be_declined_without_powering_servo(factory):
     task, _ = factory("1\nn\n")
-    with patch("m750.operator.terminal.subprocess.run") as run:
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
         task.advanced()
     run.assert_not_called()
 
@@ -288,7 +288,17 @@ def test_child_interrupt_keeps_exit_130(factory):
             == 130
         )
     with patch(
-        "m750.operator.terminal.subprocess.run",
+        "m750.operator.terminal.CommandRunner._execute",
         return_value=subprocess.CompletedProcess([], 130, "", ""),
     ), pytest.raises(KeyboardInterrupt):
         task.runner.run(["fake"])
+
+
+def test_root_back_exits_without_running_a_task(factory):
+    task, output = factory()
+    with patch("m750.operator.terminal.CommandRunner._execute") as run:
+        assert main(
+            ["--config", str(task.store.path)], Terminal(io.StringIO(":q\n"), output)
+        ) == 0
+    run.assert_not_called()
+    assert "Đã thoát menu" in output.getvalue()
