@@ -3,6 +3,7 @@
 | Trách nhiệm | Nơi đọc |
 | --- | --- |
 | API public, import nhẹ | `src/m750/__init__.py` |
+| CLI pymycobot từ root | `robot`, `robot.py`, `src/m750/robot/cli.py` |
 | Thông số robot/calibration/đường model | `spec.py` — `RobotSpec` |
 | Contract chung cho robot thật và MuJoCo | `robot/contracts.py`, `robot/types.py` |
 | Use case điều khiển qua contract | `robot/application.py` — `RobotControl` |

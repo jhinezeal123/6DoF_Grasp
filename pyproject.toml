@@ -26,6 +26,7 @@ ci = [
 ]
 
 [project.scripts]
+m750-robot = "m750.robot.cli:main"
 m750-state = "m750.cli:state_main"
 m750-camera = "m750.cli:camera_main"
 m750-preview = "m750.cli:preview_main"
