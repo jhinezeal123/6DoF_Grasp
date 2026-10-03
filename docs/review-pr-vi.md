@@ -25,10 +25,12 @@ trong khi socket client không kiểm chứng SHA của process bên kia. Pipeli
 đã ở `c417fd0` và dùng DA3. Vì thế có thể ghi metadata Lite-Mono pin cho kết quả
 được tạo bởi DA3. Chưa tự đổi pin trong refactor; cần rollout/provenance riêng.
 
-**P1 — pipeline #13 cần rollback riêng lựa chọn depth mặc định.**
-Composition mặc định chọn DA3, nhưng `prepare.sh`/requirements vẫn chuẩn bị
-Lite-Mono; scale DA3 chưa được kiểm chứng trên camera thật. Không tự cập nhật
-server theo `main`; phải biết SHA và calibration đang chạy.
+**P1 — pipeline #13 cần hoàn thiện deployment DA3 riêng.**
+Composition mặc định chọn DA3, nhưng `prepare.sh`/requirements chưa tải graph
+hoặc cài ONNX Runtime GPU đúng Jetson. Giữ DA3 mặc định: tác giả đo e2e 10/10,
+còn Lite-Mono 3/10 và Pearson depth −0.43 trên cùng test bed. Bug bootstrap
+không đủ căn cứ rollback về model đã đo kém hơn. Scale DA3 vẫn chưa được kiểm
+chứng trên camera thật; khi triển khai phải ghi SHA và calibration thực tế.
 Xem [review pipeline](https://github.com/jhinezeal123/pipeline_grasppose/blob/refactor/readable-perception-vi/docs/review-pr-vi.md).
 
 **P2 — ROS/Web UI và pymycobot là hai đường triển khai khác nhau.**
