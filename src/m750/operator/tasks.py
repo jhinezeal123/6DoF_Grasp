@@ -8,19 +8,61 @@ from dataclasses import replace
 from pathlib import Path
 
 
+# Một nơi khai báo action → (tên, mô tả, điều kiện sẵn sàng).
+FEATURES = {
+    "status": (
+        "Kiểm tra và đọc trạng thái robot",
+        "Xem môi trường, thiết bị và feedback; không gửi chuyển động.",
+        "serial",
+    ),
+    "robot": (
+        "Điều khiển robot thật",
+        "Khớp / kẹp / TCP / servo / stop; hiện lệnh và đơn vị trước khi gửi.",
+        "serial",
+    ),
+    "camera": (
+        "Xem camera / chụp ảnh",
+        "Mở camera V4L2 hoặc chụp một ảnh riêng tư.",
+        "camera",
+    ),
+    "simulation": (
+        "Thử gắp 10 cảnh mô phỏng",
+        "Preset DA3 + confidence 0.05 + gravity; tâm volume dùng ground-truth.",
+        "simulation",
+    ),
+    "perception": (
+        "Thử perception: ảnh → pose gắp",
+        "Mở menu module con; dùng environment riêng của pipeline.",
+        "perception",
+    ),
+    "advanced": (
+        "Công cụ nâng cao: ROS / VLA / preview",
+        "ROS cần SDK riêng; VLA mock là thử nghiệm, preview cần scene máy.",
+        "ROS cần SDK; VLA thử nghiệm",
+    ),
+    "configure": (
+        "Thiết lập robot / camera / perception",
+        "Lưu port, tốc độ, camera và đường dẫn module con một lần.",
+        "có thể mở",
+    ),
+    "setup": (
+        "Cài môi trường robot",
+        "Dùng script Conda hiện có để chuẩn bị Python và dependency.",
+        "cần Conda",
+    ),
+}
+
+
 class Tasks:
     def __init__(self, root, store, view, runner):
         self.root, self.store, self.view, self.runner = root, store, view, runner
         self.profile = store.load()
 
     def availability(self, action):
-        if action == "configure":
-            return "có thể mở"
-        if action == "setup":
-            return "cần Conda"
-        if action == "advanced":
-            return "ROS cần SDK; VLA thử nghiệm"
-        if action == "perception":
+        needs = FEATURES.get(action, (None, None, "python"))[2]
+        if needs not in ("serial", "camera", "simulation", "perception", "python"):
+            return needs
+        if needs == "perception":
             return (
                 "có menu con"
                 if (Path(self.profile.pipeline_repo) / "start").is_file()
@@ -29,13 +71,11 @@ class Tasks:
         python = Path(os.environ.get("M750_PYTHON", str(self.root / ".venv/bin/python")))
         if not os.access(str(python), os.X_OK):
             return "cần môi trường"
-        if action in ("robot", "status") and not Path(self.profile.port).exists():
+        if needs == "serial" and not Path(self.profile.port).exists():
             return "cần thiết bị serial"
-        if action == "camera" and not Path(self.profile.camera_device).exists():
+        if needs == "camera" and not Path(self.profile.camera_device).exists():
             return "cần camera"
-        if action == "simulation":
-            return "volume ground-truth"
-        return "có thể mở"
+        return "volume ground-truth" if needs == "simulation" else "có thể mở"
 
     def save(self, profile):
         profile.validate()
