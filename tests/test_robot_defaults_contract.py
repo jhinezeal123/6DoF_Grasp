@@ -8,7 +8,8 @@ from pathlib import Path
 
 
 def test_server_defaults_are_unchanged():
-    assert spec.DEFAULT_PORT == "/dev/ttyACM1"
+    # Nguon duy nhat cho thiet bi: symlink ~/myarm/tty (xem src/m750_defaults.py).
+    assert spec.DEFAULT_PORT == str(Path("~/myarm/tty").expanduser())
     assert spec.DEFAULT_BAUDRATE == 1_000_000
     assert spec.DEFAULT_CAMERA == "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C925e_3F4C8F2F-video-index0"
 

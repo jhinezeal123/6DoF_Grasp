@@ -37,7 +37,16 @@ def factory(tmp_path, monkeypatch):
         path.write_text("fake command; never execute")
         path.chmod(0o755)
     store = ProfileStore(tmp_path)
-    store.save(store.load())
+    # Nhan san sang phai tat dinh tren moi may: tro port/camera vao duong dan
+    # khong ton tai. Neu de default cua may (Jetson co webcam that va
+    # /dev/ttyACM0) thi nhan doi khac -> test do oan.
+    store.save(
+        replace(
+            store.load(),
+            port=str(tmp_path / "tty-khong-ton-tai"),
+            camera_device=str(tmp_path / "camera-khong-ton-tai"),
+        )
+    )
 
     def create(answers="", dry=False):
         output = io.StringIO()
