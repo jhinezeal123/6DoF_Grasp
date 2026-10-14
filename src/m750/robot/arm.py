@@ -141,8 +141,21 @@ class MyArmM750:
         return self._arm
 
     def close(self) -> None:
-        """Nha port serial (co the la MyArmMControl khong co API dong - chi bo tham chieu)."""
-        self._arm = None
+        """Dong that port serial roi moi bo tham chieu.
+
+        pymycobot 4.0.5 khong co API close o MyArmMControl, nhung doi tuong
+        serial ben trong (``_serial_port``) thi co. Chi bo tham chieu la khong
+        du: fd van mo, nen lan mo lai trong cung tien trinh se bi chinh chot
+        chan cua driver bao "dang bi giu: pid <chinh minh>".
+        """
+        device, self._arm = self._arm, None
+        serial_port = getattr(device, "_serial_port", None)
+        if serial_port is not None and getattr(serial_port, "is_open", False):
+            try:
+                serial_port.close()
+            except Exception:
+                pass  # dong that bai thi van xu su nhu cu: chi bo tham chieu
+
 
     def _open(self) -> MyArmMControl:
         """Compat voi code cu goi _open()."""
