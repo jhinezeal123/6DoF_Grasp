@@ -9,7 +9,7 @@ import sys
 
 from m750.spec import RobotSpec
 
-from .commands import RobotCommands
+from .commands import execute_command
 from .contracts import EmergencyStopController
 
 
@@ -86,8 +86,8 @@ def build_driver(args):
     )
 
 
-def _execute(args, driver):
-    return RobotCommands(driver).execute(args)
+# Compatibility cho caller cũ; main dùng dispatcher trực tiếp.
+_execute = execute_command
 
 def main(argv=None, *, driver_factory=None) -> int:
     parser = build_parser()
@@ -97,7 +97,7 @@ def main(argv=None, *, driver_factory=None) -> int:
     exit_code = 1
     try:
         driver = (build_driver if driver_factory is None else driver_factory)(args)
-        ok, details = _execute(args, driver)
+        ok, details = execute_command(args, driver)
         print(json.dumps({"ok": bool(ok), "command": args.command, **details}, ensure_ascii=False))
         exit_code = 0 if ok else 1
     except KeyboardInterrupt:
