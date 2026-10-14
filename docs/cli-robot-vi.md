@@ -31,7 +31,7 @@ tay để tránh rơi. Ví dụ tọa độ không bảo đảm reachable cho m�
 | `state` | Snapshot contract: joint radian, TCP mét/quaternion xyzw, gripper mét |
 | `angles` | Chỉ in góc joint theo độ |
 
-Option toàn cục đứng trước lệnh: `--port /dev/ttyACM1 --baud 1000000`,
+Option toàn cục đứng trước lệnh: `--port ~/myarm/tty --baud 1000000`,
 `--speed 1..100`, `--timeout SECONDS`. Có thể chỉ định interpreter bằng
 `M750_PYTHON=/path/to/python ./robot state`.
 

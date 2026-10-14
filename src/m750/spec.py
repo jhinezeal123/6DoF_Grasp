@@ -3,7 +3,8 @@
 Truoc day cac hang so nay roi rac o 2-3 noi (ductocbatdat.py, ros_bridge,
 test_2_vlm) - doi mot so phai tim nhieu cho. Bay gio tat ca import tu day.
 
-Chay tren server ktmt (port /dev/ttyACM1, baud 1000000 - mac dinh 115200 sai).
+Chay tren server ktmt (port ~/myarm/tty - nguon duy nhat o m750_defaults.py,
+baud 1000000 - mac dinh 115200 sai).
 """
 from __future__ import annotations
 

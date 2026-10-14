@@ -210,7 +210,7 @@ def test_stop_cannot_take_a_serial_port_owned_by_another_process(capsys):
     driver = Driver()
 
     def held_port():
-        raise RuntimeError("/dev/ttyACM1 đang bị giữ: pid 123")
+        raise RuntimeError("~/myarm/tty đang bị giữ: pid 123")
 
     driver.emergency_stop = held_port
     assert run(["stop"], driver) == 1
