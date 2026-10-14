@@ -52,3 +52,18 @@ def test_q_deg_tu_choi_khi_servo_chua_bat_dien(capsys):
 def test_q_deg_bao_thieu_dien_khi_doc_tra_minus_one(capsys):
     assert _arm(-1, powered=0).q_deg is None
     assert "servo chua bat dien" in capsys.readouterr().out
+
+
+def test_q_deg_bao_board_im_lang_khi_khong_doc_duoc_ca_nguon(capsys):
+    """is_powered_on() = -1: board khong tra loi -> khong duoc khuyen 'bat dien'."""
+    assert _arm(-1, powered=-1).q_deg is None
+    out = capsys.readouterr().out
+    assert "board khong tra loi" in out
+    assert "servo chua bat dien" not in out
+
+
+def test_q_deg_bao_board_im_lang_ke_ca_khi_tra_gia_tri_cau_hinh(capsys):
+    assert _arm(REPLY_MAT_DIEN, powered=-1).q_deg is None
+    out = capsys.readouterr().out
+    assert "board khong tra loi" in out
+    assert "servo chua bat dien" not in out

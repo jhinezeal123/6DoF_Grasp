@@ -169,19 +169,29 @@ class MyArmM750:
         q = _valid6(raw, self.spec)
         if q is not None:
             return tuple(q)
-        # Do that tren tay nay: servo CHUA bat dien thi get_angles() tra -1 hoac
-        # gia tri cau hinh ngoai gioi han (do 10/12 lan loi khi mat dien, 12/12
-        # sach khi co dien) -> noi ro duong sua thay vi chi bao "doc loi".
+        # Do that tren tay nay (40/40 lan doc sach khi board tra loi, ke ca luc
+        # mat dien; chi im lang khi co van de o board/duong truyen):
+        #   is_powered_on() = 0  -> board VAN tra loi, chi la servo chua bat dien
+        #   is_powered_on() = -1 -> board khong tra loi CA truy van nguon
+        # Tach hai ca nay vi khuyen "bat dien" khi board im lang la chi sai huong.
         powered = self.open().is_powered_on()
         if powered == 1:
             print("doc goc khop loi:", raw, "-> khong chay gi")
+        elif powered == 0:
+            print(
+                "doc goc khop loi:",
+                raw,
+                "| is_powered_on = 0",
+                "-> servo chua bat dien, chay ./robot power-on roi doc lai",
+            )
         else:
             print(
                 "doc goc khop loi:",
                 raw,
                 "| is_powered_on =",
                 powered,
-                "-> servo chua bat dien, chay ./robot power-on roi doc lai",
+                "-> board khong tra loi (khong doc duoc ca trang thai nguon):",
+                "kiem tra nguon board, cap USB, hoac tien trinh khac dang giu cong roi thu lai",
             )
         return None
 
