@@ -11,6 +11,7 @@ import pinocchio as pin
 from scipy.spatial.transform import Rotation as R
 
 from m750.control import ArmController
+from m750.robot.arm import _joints6
 
 
 def huong(rpy_t):
@@ -21,9 +22,9 @@ def huong(rpy_t):
 def main() -> int:
     ctrl = ArmController()
     a = ctrl.arm.open()
-    q_now = a.get_angles()
-    assert isinstance(q_now, list) and len(q_now) == 6 and -1 not in q_now, \
-        "doc goc khop loi: %s" % (q_now,)
+    raw = a.get_angles()
+    q_now = _joints6(raw)  # firmware tra 6 khop + truc end: dung chung mot cho chuan hoa
+    assert q_now is not None, "doc goc khop loi: %s" % (raw,)
 
     M = ctrl.kin.fk_tool0(q_now)
     p = M.translation * 1000.0 + M.rotation @ np.array([0.0, 0.0, ctrl.spec.grip_l_mm])

@@ -13,7 +13,7 @@ import numpy as np
 import pinocchio as pin
 from scipy.spatial.transform import Rotation as R
 
-from .arm import MyArmM750, _ok6
+from .arm import MyArmM750, _valid6
 from .ik import IKSolver
 from .kinematics import ArmKinematics
 from .safety import SafetyGate
@@ -63,7 +63,7 @@ class ArmController:
         """
         a = self.arm.open()
         return {
-            "joints_deg": a.get_angles(),
+            "joints_deg": _valid6(a.get_angles(), self.spec),
             "gripper_pct": a.get_gripper_value(),
             "gripper_pose": self.gripper_pose(),
             "fw_coords": a.get_coords(),
@@ -72,10 +72,15 @@ class ArmController:
     def print_state(self) -> None:
         """In trang thai theo dung format ban cu (ductocbatdat.state())."""
         s = self.state()
-        print("khop   :", [round(x, 2) for x in s["joints_deg"]])
+        # joints_deg/fw_coords co the la None hoac -1 (tay nay khong tra loi
+        # get_coords) -> in ra nguyen van, khong duoc crash sau khi da move xong.
+        q = s["joints_deg"]
+        fw = s["fw_coords"]
+        print("khop   :", None if q is None else [round(x, 2) for x in q])
         print("grip   :", s["gripper_pct"])
         print("gripper:", s["gripper_pose"], " <- he URDF, dung duoc")
-        print("fw     :", [round(x, 2) for x in s["fw_coords"]], " <- firmware vendor")
+        print("fw     :", [round(x, 2) for x in fw] if isinstance(fw, list) else fw,
+              " <- firmware vendor (tay nay thuong tra -1)")
 
     def ring_views(self, r: float = 150.0, theta: float = 30.0, center=None) -> list | None:
         """6 pose quanh tam (GraspNeRF IV-B). Center mac dinh = gripper hien tai.
@@ -117,8 +122,8 @@ class ArmController:
             )
             return False
         self.arm.write_joints(q_goal, speed, timeout_s, tol=tol)
-        q_end = self.arm.open().get_angles()
-        if not _ok6(q_end):
+        q_end = _valid6(self.arm.open().get_angles(), self.spec)
+        if q_end is None:
             print("doc goc khop loi sau khi chay")
             return False
         M = self.kin.fk_tool0(q_end)
@@ -187,8 +192,8 @@ class ArmController:
 
         self.arm.write_joints(q_goal, speed, timeout_s, tol=0.15, tries=6)
         # 0.15 do x 470mm ~ 1.2mm: phai chat moi duoi tol_pos
-        q_end = self.arm.open().get_angles()
-        if not _ok6(q_end):
+        q_end = _valid6(self.arm.open().get_angles(), self.spec)
+        if q_end is None:
             print("doc goc khop loi sau khi chay")
             return False
         M = self.kin.fk_tool0(q_end)
