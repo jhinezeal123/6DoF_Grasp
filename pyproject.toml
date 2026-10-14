@@ -33,6 +33,7 @@ m750-preview = "m750.cli:preview_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+py-modules = ["m750_defaults"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -12,10 +12,8 @@ from pathlib import Path
 from importlib.resources import files
 
 # baud mac dinh 115200 -> khong noi duoc voi tay
-DEFAULT_PORT = "/dev/ttyACM1"
-DEFAULT_BAUDRATE = 1_000_000
+from m750_defaults import DEFAULT_BAUDRATE, DEFAULT_CAMERA, DEFAULT_PORT
 # by-id: so video* doi theo thu tu cam
-DEFAULT_CAMERA = "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C925e_3F4C8F2F-video-index0"
 
 # gioi han firmware, khac URDF (q2=100, q3=-100)
 FW_MIN_DEG = (-165.0, -80.0, -100.0, -160.0, -90.0, -180.0)
