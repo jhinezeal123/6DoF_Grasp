@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Menu vận hành mở được cả khi environment robot chưa được cài.
+set -euo pipefail
+console_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$console_root"
+console_python="${M750_PYTHON:-$console_root/.venv/bin/python}"
+if [[ ! -x "$console_python" ]]; then
+  if [[ -n "${M750_PYTHON:-}" ]]; then
+    echo "Không tìm thấy Python: $console_python" >&2
+    exit 1
+  fi
+  console_python="$(command -v python3 || command -v python)"
+fi
+export PYTHONIOENCODING=utf-8
+exec "$console_python" -S "$console_root/start.py" "$@"

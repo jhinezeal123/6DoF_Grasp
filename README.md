@@ -4,6 +4,22 @@
 nhận perception từ `pipeline_grasppose` qua contract. Hai repo là hai module
 với hai môi trường riêng.
 
+## Bắt đầu ở đây
+
+```bash
+./start
+```
+
+Chọn việc muốn làm; menu tiếng Việt hướng dẫn đầu vào, hiện điều kiện còn thiếu
+và lệnh tương ứng. Cấu hình nhập một lần rồi lưu trên máy. `:q` quay lại khi nhập.
+
+- `./start --list`: xem toàn bộ tính năng, không nạp model hoặc mở serial.
+- `./start --dry-run`: xem lệnh dự kiến, không chạy tác vụ hay ghi profile.
+- Menu có robot thật, camera, 10 cảnh mô phỏng và module perception con.
+
+<details>
+<summary>Chi tiết kỹ thuật, API và triển khai</summary>
+
 Đọc [bản đồ code](docs/kien-truc-vi.md) và
 [review đủ 9 PR](docs/review-pr-vi.md). Hướng dẫn validation ở
 [docs/sim-grasp-validation.md](docs/sim-grasp-validation.md).
@@ -127,3 +143,5 @@ test chạy xanh trước/sau. CLI root được thêm ở PR riêng trên nền
 Không trộn model/solver/protocol mới trong diff refactor. GitHub CI chạy cả
 rendering bằng OSMesa và test Unix socket; offline unit tests không chứng minh
 robot thật hay legacy ROS service đã chạy thành công.
+
+</details>

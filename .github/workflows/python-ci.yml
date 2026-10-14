@@ -3,6 +3,20 @@ name: Python CI
 on: [push, pull_request]
 
 jobs:
+  menu:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: ./start --list
+      - run: ./start --help
+      - run: ./start </dev/null
+      - run: python -S -c 'import start, sys; assert "m750" not in sys.modules; assert "pymycobot" not in sys.modules; assert "mujoco" not in sys.modules'
   tests:
     runs-on: ubuntu-22.04
     env:
@@ -17,5 +31,6 @@ jobs:
           python-version: '3.10'
       - run: sudo apt-get update && sudo apt-get install -y libosmesa6
       - run: python -m pip install -e '.[ci]'
-      - run: python -m compileall -q src tests tools
+      - run: bash -n start robot
+      - run: python -m compileall -q src tests tools start.py robot.py
       - run: python -m pytest -q
