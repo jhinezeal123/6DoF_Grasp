@@ -1,6 +1,6 @@
 """Test hardware (doc robot that, KHONG ra lenh chuyen dong): chay thu cong.
 
-KHONG chay trong pytest mac dinh - doc /dev/ttyACM1 that. Chay tren server:
+KHONG chay trong pytest mac dinh - doc ~/myarm/tty that. Chay tren server:
 
     python tests/test_gripper_pose_hardware.py
 

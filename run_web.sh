@@ -68,7 +68,7 @@ stack_running() { pgrep -f "$STACK_PATTERN" >/dev/null 2>&1; }
 # con duong nao goi duoc: khong co handle serial nao de gui lenh.
 #
 # Do do phai bat dien tu ngoai, bang chinh pymycobot, VA phai tra port lai
-# truoc khi driver mo (chi mot tien trinh duoc giu /dev/ttyACM1).
+# truoc khi driver mo (chi mot tien trinh duoc giu ~/myarm/tty).
 #
 # ponytail: day la workaround co y thuc. Goc nam o connect() cua adapter
 # (myarm_m750_robot_arm.py) — no tu choi hoan tat khi tay chua co dien, nen
